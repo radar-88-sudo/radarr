@@ -259,7 +259,7 @@
     let liveAircraft = [];
     let isFetching = false;
     let pollIntervalTimer = null;
-    let currentIntervalMs = 30000;
+    let currentIntervalMs = 15000;
 
     function calcDistanceNM(lat1, lon1, lat2, lon2) {
       const R = 3440.065;
@@ -282,7 +282,7 @@
         keyboard: false
       }).setView([userConfig.lat, userConfig.lon], 8);
 
-      // Updated to light, clean minimalist map tiles with clear city names
+      // Clean minimalist CARTO Positron map layer with limited city names
       L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
         maxZoom: 19,
         subdomains: ['a', 'b', 'c', 'd'],
@@ -325,52 +325,66 @@
       if (isFetching) return;
       isFetching = true;
 
-      const endpoints = [
+      const directUrls = [
         `https://api.adsb.lol/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`,
         `https://api.airplanes.live/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`
       ];
 
       let success = false;
 
-      for (let url of endpoints) {
+      for (let url of directUrls) {
         try {
-          const response = await fetch(url);
-          if (response.status === 429) {
-            console.warn(`Rate limited (429) on endpoint: ${url}`);
-            continue;
-          }
-          if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-          
-          const data = await response.json();
-
-          if (data && data.ac) {
-            liveAircraft = data.ac;
-            document.getElementById('connection-status').innerText = `Live Connected (${liveAircraft.length} targets)`;
-            document.getElementById('connection-status').style.color = '#10b981';
-            renderFlightBoard(liveAircraft);
-            updateNearestScrollboard(liveAircraft);
-            success = true;
-            
-            if (currentIntervalMs !== 30000) {
-              currentIntervalMs = 30000;
-              resetPollingInterval();
+          const response = await fetch(url, { mode: 'cors' });
+          if (response.ok) {
+            const data = await response.json();
+            if (data && data.ac) {
+              liveAircraft = data.ac;
+              updateUIState(true);
+              success = true;
+              break;
             }
-            break;
           }
         } catch (err) {
-          console.warn(`Endpoint try failed (${url}):`, err);
+          // Fallback to proxy if direct fetch fails due to CORS or network rules
+          try {
+            const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+            const proxyResp = await fetch(proxyUrl);
+            if (proxyResp.ok) {
+              const data = await proxyResp.json();
+              if (data && data.ac) {
+                liveAircraft = data.ac;
+                updateUIState(true);
+                success = true;
+                break;
+              }
+            }
+          } catch (proxyErr) {
+            console.warn('Endpoint & Proxy attempt failed:', proxyErr);
+          }
         }
       }
 
       if (!success) {
-        document.getElementById('connection-status').innerText = `Live Stream Active (Cached - Retrying...)`;
-        document.getElementById('connection-status').style.color = '#f59e0b';
-        
-        currentIntervalMs = Math.min(currentIntervalMs * 1.5, 60000);
-        resetPollingInterval();
+        updateUIState(false);
       }
 
       isFetching = false;
+    }
+
+    function updateUIState(isConnected) {
+      const statusEl = document.getElementById('connection-status');
+      if (isConnected) {
+        statusEl.innerText = `Live Connected (${liveAircraft.length} targets)`;
+        statusEl.style.color = '#10b981';
+        renderFlightBoard(liveAircraft);
+        updateNearestScrollboard(liveAircraft);
+        currentIntervalMs = 15000;
+      } else {
+        statusEl.innerText = `Retrying Live Stream...`;
+        statusEl.style.color = '#f59e0b';
+        currentIntervalMs = Math.min(currentIntervalMs * 1.5, 30000);
+      }
+      resetPollingInterval();
     }
 
     function resetPollingInterval() {
@@ -498,7 +512,6 @@
       requestAnimationFrame(drawRadarScope);
       
       fetchLiveFlights();
-      resetPollingInterval();
     });
   </script>
 </body>
