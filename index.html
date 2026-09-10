@@ -255,7 +255,7 @@
       lat: 52.9529,
       lon: -0.9547,
       radiusNM: 50,
-      pollInterval: 25000 // Safe 25-second interval to completely prevent 429 rate limits
+      pollInterval: 15000
     };
 
     let activeAircraft = [];
@@ -276,7 +276,7 @@
     }
 
     function isMilitaryAircraft(ac) {
-      if (ac.dbFlags !== undefined && (ac.dbFlags & 1) !== 0) return true;
+      if (ac.dbFlags !== undefined && (ac.dbFlags & 1) !== 0) return top;
       if (ac.mil === true || ac.mil === 1) return true;
       if (ac.t === 'Military') return true;
 
@@ -351,13 +351,11 @@
       if (isFetching) return;
       isFetching = true;
 
+      // Use a CORS-friendly endpoint mirror compatible with ADS-B Exchange architecture 
       const url = `https://api.adsb.lol/v2/lat/${ADSB_CONFIG.lat}/lon/${ADSB_CONFIG.lon}/dist/${ADSB_CONFIG.radiusNM}`;
 
       try {
-        const response = await fetch(url);
-        if (response.status === 429) {
-          throw new Error("Rate limited (429)");
-        }
+        const response = await fetch(url, { mode: 'cors' });
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         
         const data = await response.json();
@@ -367,8 +365,20 @@
         renderFlightBoard(activeAircraft);
         updateNearestScrollboard(activeAircraft);
       } catch (err) {
-        console.warn("Direct fetch warning:", err.message);
-        updateConnectionStatus("Status: Retrying Airspace Feed...");
+        console.warn("Primary fetch failed, using fallback feed...", err);
+        try {
+          // Fallback direct endpoint feed
+          const fallbackRes = await fetch('https://api.adsb.lol/v2/mil', { mode: 'cors' });
+          if (fallbackRes.ok) {
+            const fallbackData = await fallbackRes.json();
+            activeAircraft = fallbackData.ac || fallbackData.aircraft || [];
+            updateConnectionStatus(`Status: Tracking via Global Feed (${activeAircraft.length})`);
+            renderFlightBoard(activeAircraft);
+            updateNearestScrollboard(activeAircraft);
+          }
+        } catch (innerErr) {
+          updateConnectionStatus("Status: Connection Offline");
+        }
       } finally {
         isFetching = false;
       }
