@@ -574,6 +574,12 @@
     }
 
     function isMilitary(ac) {
+      // Check database flags (dbFlags & 1 indicates military in ADSB.lol / Airplanes.live)
+      const dbFlags = ac.dbFlags !== undefined ? ac.dbFlags : (ac.db_flags !== undefined ? ac.db_flags : 0);
+      if (dbFlags & 1) {
+        return true;
+      }
+
       const type = (ac.t || '').toUpperCase();
       const flight = (ac.flight || '').toUpperCase();
       const cat = (ac.category || '').toUpperCase();
