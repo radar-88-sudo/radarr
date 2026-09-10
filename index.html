@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Live ADSB Airspace Scope (Kiosk Mode)</title>
+  <title>Live ADSB Airspace Scope (15.6" Kiosk Mode)</title>
   
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
@@ -27,24 +27,25 @@
       color: var(--text-main);
       font-family: system-ui, -apple-system, sans-serif;
       height: 100vh;
+      width: 100vw;
       overflow: hidden;
       display: flex;
       flex-direction: column;
     }
 
     header {
-      padding: 0.5rem 1.25rem;
+      padding: 0.4rem 1rem;
       background: rgba(15, 23, 42, 0.95);
       border-bottom: 1px solid var(--card-border);
       display: flex;
       justify-content: space-between;
       align-items: center;
-      height: 45px;
+      height: 42px;
       z-index: 1000;
     }
 
     h1 {
-      font-size: 1rem;
+      font-size: 0.95rem;
       font-weight: 600;
       letter-spacing: 0.05em;
       text-transform: uppercase;
@@ -55,8 +56,8 @@
     }
 
     .pulse-dot {
-      width: 9px;
-      height: 9px;
+      width: 8px;
+      height: 8px;
       background-color: var(--accent-green);
       border-radius: 50%;
       box-shadow: 0 0 8px var(--accent-green);
@@ -71,21 +72,19 @@
 
     main {
       flex: 1;
-      padding: 0.5rem 0.75rem;
+      padding: 0.5rem;
       display: grid;
-      grid-template-columns: 1fr 380px;
-      gap: 0.75rem;
+      grid-template-columns: 1fr 360px;
+      gap: 0.5rem;
       width: 100%;
-      max-width: 1920px;
-      margin: 0 auto;
-      height: calc(100vh - 175px);
+      height: calc(100vh - 154px);
     }
 
     .radar-wrapper {
       position: relative;
       background: #060911;
       border: 1px solid var(--card-border);
-      border-radius: 10px;
+      border-radius: 8px;
       overflow: hidden;
       height: 100%;
       width: 100%;
@@ -121,45 +120,45 @@
     .panel {
       background: var(--card-bg);
       border: 1px solid var(--card-border);
-      border-radius: 10px;
-      padding: 0.6rem;
+      border-radius: 8px;
+      padding: 0.5rem;
       display: flex;
       flex-direction: column;
       height: 100%;
     }
 
     .panel-title {
-      font-size: 0.75rem;
+      font-size: 0.7rem;
       font-weight: 600;
       text-transform: uppercase;
       color: var(--text-dim);
-      margin-bottom: 0.4rem;
+      margin-bottom: 0.35rem;
       letter-spacing: 0.05em;
     }
 
     .aircraft-grid {
       display: flex;
       flex-direction: column;
-      gap: 0.45rem;
+      gap: 0.4rem;
       flex: 1;
       overflow-y: auto;
       padding-right: 4px;
     }
 
-    /* Side-by-side card layout with optimized thumbnail */
+    /* Compact side-by-side card layout tailored for 15.6" screens */
     .ac-card {
       background: rgba(30, 41, 59, 0.7);
       border: 1px solid rgba(255, 255, 255, 0.08);
-      padding: 0.5rem 0.6rem;
+      padding: 0.4rem 0.5rem;
       border-radius: 6px;
       display: flex;
       align-items: center;
-      gap: 0.75rem;
+      gap: 0.6rem;
     }
 
     .ac-thumb {
-      width: 110px;
-      height: 70px;
+      width: 100px;
+      height: 64px;
       background: rgba(10, 15, 30, 0.9);
       border: 1px solid var(--card-border);
       border-radius: 4px;
@@ -177,10 +176,10 @@
     }
 
     footer {
-      height: 120px;
+      height: 112px;
       background: rgba(15, 23, 42, 0.98);
       border-top: 1px solid var(--card-border);
-      padding: 0.4rem 0.75rem;
+      padding: 0.4rem 0.5rem;
       display: flex;
       align-items: center;
       z-index: 1000;
@@ -193,7 +192,7 @@
       border: 1px solid var(--card-border);
       border-radius: 8px;
       display: grid;
-      grid-template-columns: 130px 1.3fr 1.1fr 1fr;
+      grid-template-columns: 120px 1.3fr 1.1fr 1fr;
       align-items: center;
       overflow: hidden;
     }
@@ -216,7 +215,7 @@
     }
 
     .logo-fallback {
-      font-size: 0.75rem;
+      font-size: 0.7rem;
       font-weight: bold;
       color: var(--accent-blue);
       text-align: center;
@@ -225,7 +224,7 @@
     }
 
     .banner-col {
-      padding: 0.5rem 0.85rem;
+      padding: 0.4rem 0.75rem;
       display: flex;
       flex-direction: column;
       justify-content: center;
@@ -238,7 +237,7 @@
     }
 
     .airline-heading {
-      font-size: 1.25rem;
+      font-size: 1.15rem;
       font-weight: 800;
       color: var(--accent-blue);
       letter-spacing: 0.02em;
@@ -247,17 +246,17 @@
     }
 
     .aircraft-meta {
-      font-size: 0.8rem;
+      font-size: 0.75rem;
       color: var(--text-dim);
       font-weight: 500;
-      margin-bottom: 0.25rem;
+      margin-bottom: 0.2rem;
     }
 
     .route-container {
       display: flex;
       flex-direction: column;
-      gap: 0.15rem;
-      font-size: 0.85rem;
+      gap: 0.1rem;
+      font-size: 0.8rem;
       font-weight: 600;
     }
 
@@ -272,9 +271,9 @@
 
     .route-label {
       color: var(--text-dim);
-      font-size: 0.72rem;
+      font-size: 0.68rem;
       text-transform: uppercase;
-      width: 35px;
+      width: 32px;
       flex-shrink: 0;
     }
 
@@ -282,24 +281,24 @@
       display: flex;
       flex-direction: column;
       justify-content: center;
-      gap: 0.15rem;
+      gap: 0.1rem;
     }
 
     .primary-metric {
-      font-size: 1.35rem;
+      font-size: 1.25rem;
       font-weight: 800;
       color: var(--accent-green);
       line-height: 1.1;
     }
 
     .secondary-metric {
-      font-size: 0.9rem;
+      font-size: 0.85rem;
       font-weight: 600;
       color: var(--text-main);
     }
 
     .sub-title {
-      font-size: 0.7rem;
+      font-size: 0.65rem;
       font-weight: 700;
       color: var(--text-dim);
       text-transform: uppercase;
@@ -310,10 +309,10 @@
 <body>
 
   <header>
-    <h1><span class="pulse-dot"></span> Live ADSB Radar Scope (Kiosk Mode)</h1>
-    <div style="display: flex; align-items: center; gap: 1rem;">
-      <div id="audio-indicator" style="background: rgba(30, 41, 59, 0.9); border: 1px solid var(--accent-green); color: var(--accent-green); padding: 0.25rem 0.6rem; border-radius: 6px; font-size: 0.75rem; font-weight: 600;">🔊 Audio System: ACTIVE</div>
-      <div id="connection-status" style="font-size: 0.8rem; color: var(--accent-blue);">Initializing Feed...</div>
+    <h1><span class="pulse-dot"></span> Live ADSB Radar Scope (15.6" Locked Mode)</h1>
+    <div style="display: flex; align-items: center; gap: 0.75rem;">
+      <div id="audio-indicator" style="background: rgba(30, 41, 59, 0.9); border: 1px solid var(--accent-green); color: var(--accent-green); padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.7rem; font-weight: 600;">🔊 Audio: ACTIVE</div>
+      <div id="connection-status" style="font-size: 0.75rem; color: var(--accent-blue);">Initializing Feed...</div>
     </div>
   </header>
 
@@ -327,9 +326,9 @@
       <div class="panel">
         <div class="panel-title" style="color: var(--accent-military);">Active Military Transponders</div>
         <div id="aircraft-grid" class="aircraft-grid">
-          <div style="color:var(--text-dim); font-size:0.8rem; padding: 0.75rem; text-align:center;">Scanning sector...</div>
+          <div style="color:var(--text-dim); font-size:0.75rem; padding: 0.5rem; text-align:center;">Scanning sector...</div>
         </div>
-        <div id="status-bar" style="font-size:0.65rem; color:var(--text-dim); margin-top:0.4rem;">
+        <div id="status-bar" style="font-size:0.6rem; color:var(--text-dim); margin-top:0.3rem;">
           Station: 52.9529° N, 0.9547° W
         </div>
       </div>
@@ -366,8 +365,8 @@
 
       <div class="banner-col metric-group">
         <div id="sb-rate" class="secondary-metric" style="font-weight: 700;">Rate: --</div>
-        <div id="sb-heading" class="secondary-metric" style="font-size:0.85rem; color:var(--text-dim);">Heading: --°</div>
-        <div id="sb-squawk" class="secondary-metric" style="font-size:0.8rem; color:var(--text-dim);">Squawk: -- | Hex: --</div>
+        <div id="sb-heading" class="secondary-metric" style="font-size:0.8rem; color:var(--text-dim);">Heading: --°</div>
+        <div id="sb-squawk" class="secondary-metric" style="font-size:0.75rem; color:var(--text-dim);">Squawk: -- | Hex: --</div>
       </div>
     </div>
   </footer>
@@ -563,6 +562,7 @@
     }
 
     function initMap() {
+      // Map and zoom fully locked down for 15.6" kiosk usage
       map = L.map('map', {
         zoomControl: false,
         attributionControl: false,
@@ -570,11 +570,16 @@
         scrollWheelZoom: false,
         doubleClickZoom: false,
         boxZoom: false,
-        keyboard: false
+        keyboard: false,
+        touchZoom: false,
+        tap: false,
+        minZoom: 8,
+        maxZoom: 8
       }).setView([userConfig.lat, userConfig.lon], 8);
 
       L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
+        minZoom: 8,
+        maxZoom: 8,
         attribution: '&copy; OpenStreetMap contributors'
       }).addTo(map);
 
@@ -677,7 +682,7 @@
       const militaryList = acList.filter(ac => isMilitary(ac));
 
       if (!militaryList || militaryList.length === 0) {
-        gridEl.innerHTML = '<div style="color:var(--text-dim); font-size:0.8rem; padding: 0.75rem; text-align:center;">No active military transponders within 50 NM.</div>';
+        gridEl.innerHTML = '<div style="color:var(--text-dim); font-size:0.75rem; padding: 0.5rem; text-align:center;">No active military transponders within 50 NM.</div>';
         return;
       }
 
@@ -695,12 +700,12 @@
             <span style="font-size:0.6rem; color:var(--accent-military); font-weight:bold; text-align:center;">MIL</span>
           </div>
           <div style="flex: 1; min-width: 0;">
-            <div style="font-weight:bold; font-size:0.85rem; color:var(--accent-military); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${ac.flight ? ac.flight.trim() : ac.hex}</div>
-            <div style="font-size:0.7rem; color:var(--text-dim);">[${ac.t || 'MIL'}] • ${ac.gs || 0} kts</div>
+            <div style="font-weight:bold; font-size:0.8rem; color:var(--accent-military); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${ac.flight ? ac.flight.trim() : ac.hex}</div>
+            <div style="font-size:0.68rem; color:var(--text-dim);">[${ac.t || 'MIL'}] • ${ac.gs || 0} kts</div>
           </div>
           <div style="text-align:right; flex-shrink: 0;">
-            <div style="font-weight:bold; color:var(--accent-green); font-size:0.85rem;">${dist.toFixed(1)} NM</div>
-            <div style="font-size:0.7rem; color:var(--text-dim);">${ac.alt_baro || 'Ground'} ft</div>
+            <div style="font-weight:bold; color:var(--accent-green); font-size:0.8rem;">${dist.toFixed(1)} NM</div>
+            <div style="font-size:0.68rem; color:var(--text-dim);">${ac.alt_baro || 'Ground'} ft</div>
           </div>
         `;
         gridEl.appendChild(card);
