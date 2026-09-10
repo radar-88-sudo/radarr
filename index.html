@@ -71,7 +71,7 @@
       flex: 1;
       padding: 0.75rem 1rem;
       display: grid;
-      grid-template-columns: 1fr 340px;
+      grid-template-columns: 1fr 360px;
       gap: 1rem;
       width: 100%;
       max-width: 1920px;
@@ -209,8 +209,8 @@
 <body>
 
   <header>
-    <h1><span class="pulse-dot"></span> Live ADSB Radar Scope (50 NM)</h1>
-    <div id="connection-status" style="font-size: 0.85rem; color: var(--accent-blue);">Connecting to Live Feed...</div>
+    <h1><span class="pulse-dot"></span> Live ADSB Radar Scope (v2.5 Vector Engine)</h1>
+    <div id="connection-status" style="font-size: 0.85rem; color: var(--accent-blue);">Initializing Vector Engine...</div>
   </header>
 
   <main>
@@ -221,9 +221,9 @@
 
     <aside class="sidebar">
       <div class="panel">
-        <div class="panel-title">Active Live Transponders</div>
+        <div class="panel-title">Active Transponders & Silhouette Types</div>
         <div id="aircraft-grid" class="aircraft-grid">
-          <div style="color:var(--text-dim); font-size:0.85rem; padding: 1rem; text-align:center;">Scanning live sector...</div>
+          <div style="color:var(--text-dim); font-size:0.85rem; padding: 1rem; text-align:center;">Scanning sector...</div>
         </div>
         <div id="status-bar" style="font-size:0.7rem; color:var(--text-dim); margin-top:0.5rem;">
           Station: 52.9529° N, 0.9547° W (Direct Feed)
@@ -389,6 +389,37 @@
       pollIntervalTimer = setInterval(fetchLiveFlights, currentIntervalMs);
     }
 
+    function getAircraftCategory(ac) {
+      const type = (ac.t || '').toUpperCase();
+      const cat = (ac.category || '').toUpperCase();
+
+      if (cat.startsWith('H') || ['R44', 'R22', 'EC35', 'H135', 'H145', 'B06', 'AS35', 'S76', 'AW13'].some(s => type.includes(s))) {
+        return 'HELICOPTER';
+      }
+      if (['F16', 'F15', 'F18', 'EUT', 'TOR', 'HAWK', 'A10', 'C130', 'C17', 'TYPH'].some(s => type.includes(s)) || cat === 'A7') {
+        return 'FIGHTER_MILITARY';
+      }
+      if (['GLF', 'CL3', 'CL6', 'LJ', 'FA7', 'PRM', 'E55', 'H25B', 'C56X', 'LJ35', 'BE40'].some(s => type.includes(s)) || cat === 'A4') {
+        return 'BUSINESS_JET';
+      }
+      if (['A380', 'B744', 'B748'].some(s => type.includes(s))) {
+        return 'SUPER_HEAVY';
+      }
+      if (['B77', 'B78', 'A35', 'A33', 'B76', 'B75', 'A34'].some(s => type.includes(s)) || cat === 'A5' || cat === 'A6') {
+        return 'WIDEBODY';
+      }
+      if (['E19', 'E17', 'CRJ', 'BCS', 'SU95', 'ARJ'].some(s => type.includes(s))) {
+        return 'REGIONAL';
+      }
+      if (['AT7', 'AT4', 'DH8', 'SF3', 'SB2', 'BE2', 'PC12', 'C208'].some(s => type.includes(s))) {
+        return 'TURBOPROP_HIGH';
+      }
+      if (['C172', 'C150', 'C182', 'PA28', 'PA34', 'SR20', 'SR22', 'DA40', 'DA42'].some(s => type.includes(s)) || cat === 'A1') {
+        return 'LIGHT';
+      }
+      return 'NARROWBODY';
+    }
+
     function renderFlightBoard(acList) {
       const gridEl = document.getElementById('aircraft-grid');
       if (!gridEl) return;
@@ -402,16 +433,17 @@
       acList.forEach(ac => {
         if (!ac.lat || !ac.lon) return;
         const dist = calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon);
+        const cat = getAircraftCategory(ac);
         const card = document.createElement('div');
         card.className = 'ac-card';
         card.innerHTML = `
           <div>
             <div style="font-weight:bold; font-size:0.95rem; color:#f8fafc;">${ac.flight ? ac.flight.trim() : ac.hex}</div>
-            <div style="font-size:0.75rem; color:var(--text-dim);">${ac.t || 'Unknown'} • ${ac.gs || 0} kts</div>
+            <div style="font-size:0.72rem; color:var(--accent-blue);">[${ac.t || 'UNK'}] • ${cat}</div>
           </div>
           <div style="text-align:right;">
             <div style="font-weight:bold; color:var(--accent-green);">${dist.toFixed(1)} NM</div>
-            <div style="font-size:0.75rem; color:var(--text-dim);">${ac.alt_baro || 'Ground'} ft</div>
+            <div style="font-size:0.72rem; color:var(--text-dim);">${ac.alt_baro || 'Ground'} ft</div>
           </div>
         `;
         gridEl.appendChild(card);
@@ -433,39 +465,8 @@
       document.getElementById('sb-alt').innerText = `Alt: ${nearest.alt_baro || 'Ground'} ft`;
       document.getElementById('sb-speed').innerText = `Speed: ${nearest.gs || 0} kts`;
       document.getElementById('sb-airline').innerText = nearest.flight ? nearest.flight.trim() : `ICAO: ${nearest.hex}`;
-      document.getElementById('sb-type').innerText = `Type: ${nearest.t || 'Aircraft'} (Live ADSB)`;
+      document.getElementById('sb-type').innerText = `Type: ${nearest.t || 'Aircraft'} (${getAircraftCategory(nearest)})`;
       document.getElementById('sb-route').innerText = `Position: ${nearest.lat.toFixed(3)}°, ${nearest.lon.toFixed(3)}°`;
-    }
-
-    function getAircraftCategory(ac) {
-      const type = (ac.t || '').toUpperCase();
-      const cat = (ac.category || '').toUpperCase();
-
-      if (cat.startsWith('H') || ['R44', 'R22', 'EC35', 'H135', 'H145', 'B06', 'AS35', 'S76', 'AW13'].some(s => type.includes(s))) {
-        return 'HELICOPTER';
-      }
-      if (['F16', 'F15', 'F18', 'EUT', 'TOR', 'HAWK', 'A10', 'C130', 'C17'].some(s => type.includes(s)) || cat === 'A7') {
-        return 'FIGHTER_MILITARY';
-      }
-      if (['GLF', 'CL3', 'CL6', 'LJ', 'FA7', 'PRM', 'E55', 'H25B', 'C56X', 'LJ35'].some(s => type.includes(s)) || cat === 'A4') {
-        return 'BUSINESS_JET';
-      }
-      if (['A380', 'B744', 'B748'].some(s => type.includes(s))) {
-        return 'SUPER_HEAVY';
-      }
-      if (['B77', 'B78', 'A35', 'A33', 'B76', 'B75', 'A34'].some(s => type.includes(s)) || cat === 'A5' || cat === 'A6') {
-        return 'WIDEBODY';
-      }
-      if (['E19', 'E17', 'CRJ', 'BCS', 'SU95', 'ARJ'].some(s => type.includes(s))) {
-        return 'REGIONAL';
-      }
-      if (['AT7', 'AT4', 'DH8', 'SF3', 'SB2', 'BE2', 'PC12', 'C208'].some(s => type.includes(s))) {
-        return 'TURBOPROP_HIGH';
-      }
-      if (['C172', 'C150', 'C182', 'PA28', 'PA34', 'SR20', 'SR22', 'DA40', 'DA42'].some(s => type.includes(s)) || cat === 'A1') {
-        return 'LIGHT';
-      }
-      return 'NARROWBODY';
     }
 
     function drawRadarScope() {
@@ -497,7 +498,6 @@
 
       ctx.setLineDash([]);
 
-      // Render exact VRS silhouette vector paths matching the user's icon sheet
       liveAircraft.forEach(ac => {
         if (!ac.lat || !ac.lon) return;
         const p = map.latLngToContainerPoint([ac.lat, ac.lon]);
@@ -511,111 +511,49 @@
         ctx.beginPath();
 
         if (category === 'HELICOPTER') {
-          // Classic VRS Helicopter silhouette with main rotor disc & tail boom
           ctx.moveTo(0, -14); ctx.lineTo(2.5, -4); ctx.lineTo(3, 10); ctx.lineTo(1.5, 15);
           ctx.lineTo(-1.5, 15); ctx.lineTo(-3, 10); ctx.lineTo(-2.5, -4); ctx.closePath();
-          // Rotor cross
           ctx.moveTo(-14, 0); ctx.lineTo(14, 0);
           ctx.moveTo(0, -14); ctx.lineTo(0, 14);
         } 
         else if (category === 'FIGHTER_MILITARY') {
-          // Sharp Fighter / Delta Jet silhouette (matching icon set)
-          ctx.moveTo(0, -17);
-          ctx.lineTo(2.5, -5);
-          ctx.lineTo(15, 7);
-          ctx.lineTo(3, 6);
-          ctx.lineTo(2, 13);
-          ctx.lineTo(4, 16);
-          ctx.lineTo(0, 14);
-          ctx.lineTo(-4, 16);
-          ctx.lineTo(-2, 13);
-          ctx.lineTo(-3, 6);
-          ctx.lineTo(-15, 7);
-          ctx.lineTo(-2.5, -5);
+          ctx.moveTo(0, -17); ctx.lineTo(2.5, -5); ctx.lineTo(15, 7); ctx.lineTo(3, 6);
+          ctx.lineTo(2, 13); ctx.lineTo(4, 16); ctx.lineTo(0, 14); ctx.lineTo(-4, 16);
+          ctx.lineTo(-2, 13); ctx.lineTo(-3, 6); ctx.lineTo(-15, 7); ctx.lineTo(-2.5, -5);
           ctx.closePath();
         } 
         else if (category === 'BUSINESS_JET') {
-          // Sleek Executive Jet silhouette
-          ctx.moveTo(0, -16);
-          ctx.lineTo(2, -4);
-          ctx.lineTo(14, 2);
-          ctx.lineTo(3, 7);
-          ctx.lineTo(1.5, 12);
-          ctx.lineTo(3.5, 15);
-          ctx.lineTo(0, 13);
-          ctx.lineTo(-3.5, 15);
-          ctx.lineTo(-1.5, 12);
-          ctx.lineTo(-3, 7);
-          ctx.lineTo(-14, 2);
-          ctx.lineTo(-2, -4);
+          ctx.moveTo(0, -16); ctx.lineTo(2, -4); ctx.lineTo(14, 2); ctx.lineTo(3, 7);
+          ctx.lineTo(1.5, 12); ctx.lineTo(3.5, 15); ctx.lineTo(0, 13); ctx.lineTo(-3.5, 15);
+          ctx.lineTo(-1.5, 12); ctx.lineTo(-3, 7); ctx.lineTo(-14, 2); ctx.lineTo(-2, -4);
           ctx.closePath();
         } 
         else if (category === 'SUPER_HEAVY') {
-          // Quad-Engine Heavy Airliner silhouette
-          ctx.moveTo(0, -22);
-          ctx.lineTo(5, -5);
-          ctx.lineTo(25, 3);
-          ctx.lineTo(7, 10);
-          ctx.lineTo(3.5, 18);
-          ctx.lineTo(7, 21);
-          ctx.lineTo(0, 19);
-          ctx.lineTo(-7, 21);
-          ctx.lineTo(-3.5, 18);
-          ctx.lineTo(-7, 10);
-          ctx.lineTo(-25, 3);
-          ctx.lineTo(-5, -5);
+          ctx.moveTo(0, -22); ctx.lineTo(5, -5); ctx.lineTo(25, 3); ctx.lineTo(7, 10);
+          ctx.lineTo(3.5, 18); ctx.lineTo(7, 21); ctx.lineTo(0, 19); ctx.lineTo(-7, 21);
+          ctx.lineTo(-3.5, 18); ctx.lineTo(-7, 10); ctx.lineTo(-25, 3); ctx.lineTo(-5, -5);
           ctx.closePath();
         } 
         else if (category === 'WIDEBODY') {
-          // Widebody Twin-Jet silhouette
-          ctx.moveTo(0, -19);
-          ctx.lineTo(4.5, -4);
-          ctx.lineTo(21, 4);
-          ctx.lineTo(6.5, 10);
-          ctx.lineTo(3, 17);
-          ctx.lineTo(6.5, 20);
-          ctx.lineTo(0, 18);
-          ctx.lineTo(-6.5, 20);
-          ctx.lineTo(-3, 17);
-          ctx.lineTo(-6.5, 10);
-          ctx.lineTo(-21, 4);
-          ctx.lineTo(-4.5, -4);
+          ctx.moveTo(0, -19); ctx.lineTo(4.5, -4); ctx.lineTo(21, 4); ctx.lineTo(6.5, 10);
+          ctx.lineTo(3, 17); ctx.lineTo(6.5, 20); ctx.lineTo(0, 18); ctx.lineTo(-6.5, 20);
+          ctx.lineTo(-3, 17); ctx.lineTo(-6.5, 10); ctx.lineTo(-21, 4); ctx.lineTo(-4.5, -4);
           ctx.closePath();
         } 
         else if (category === 'TURBOPROP_HIGH') {
-          // High-Wing Turboprop silhouette (straight high wings)
-          ctx.moveTo(0, -15);
-          ctx.lineTo(3, -4);
-          ctx.lineTo(17, -1);
-          ctx.lineTo(3.5, 3);
-          ctx.lineTo(2.5, 14);
-          ctx.lineTo(5, 17);
-          ctx.lineTo(0, 15);
-          ctx.lineTo(-5, 17);
-          ctx.lineTo(-2.5, 14);
-          ctx.lineTo(-3.5, 3);
-          ctx.lineTo(-17, -1);
-          ctx.lineTo(-3, -4);
+          ctx.moveTo(0, -15); ctx.lineTo(3, -4); ctx.lineTo(17, -1); ctx.lineTo(3.5, 3);
+          ctx.lineTo(2.5, 14); ctx.lineTo(5, 17); ctx.lineTo(0, 15); ctx.lineTo(-5, 17);
+          ctx.lineTo(-2.5, 14); ctx.lineTo(-3.5, 3); ctx.lineTo(-17, -1); ctx.lineTo(-3, -4);
           ctx.closePath();
         } 
         else {
-          // Standard Narrowbody Airliner silhouette (A320 / B737)
-          ctx.moveTo(0, -16);
-          ctx.lineTo(3.5, -4);
-          ctx.lineTo(15, 3);
-          ctx.lineTo(5, 9);
-          ctx.lineTo(2.5, 14);
-          ctx.lineTo(5.5, 17);
-          ctx.lineTo(0, 15);
-          ctx.lineTo(-5.5, 17);
-          ctx.lineTo(-2.5, 14);
-          ctx.lineTo(-5, 9);
-          ctx.lineTo(-15, 3);
-          ctx.lineTo(-3.5, -4);
+          // Distinct modern airliner contour
+          ctx.moveTo(0, -16); ctx.lineTo(3.5, -4); ctx.lineTo(15, 3); ctx.lineTo(5, 9);
+          ctx.lineTo(2.5, 14); ctx.lineTo(5.5, 17); ctx.lineTo(0, 15); ctx.lineTo(-5.5, 17);
+          ctx.lineTo(-2.5, 14); ctx.lineTo(-5, 9); ctx.lineTo(-15, 3); ctx.lineTo(-3.5, -4);
           ctx.closePath();
         }
 
-        // Clean icon fill & distinct outline matching icon sheet aesthetic
         if (category === 'HELICOPTER') {
           ctx.strokeStyle = '#10b981';
           ctx.lineWidth = 2;
@@ -639,7 +577,6 @@
 
         ctx.restore();
 
-        // Target label
         const callsign = ac.flight ? ac.flight.trim() : ac.hex;
         const typeCode = ac.t ? `[${ac.t}]` : '';
         ctx.font = 'bold 11px monospace';
@@ -671,7 +608,6 @@
       window.addEventListener('resize', resizeCanvas);
       
       requestAnimationFrame(drawRadarScope);
-      
       fetchLiveFlights();
     });
   </script>
