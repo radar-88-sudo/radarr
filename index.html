@@ -289,7 +289,6 @@
     let currentTrackedKey = null;
 
     const GENERIC_AIRCRAFT_IMAGE = 'https://upload.wikimedia.org/wikipedia/commons/8/8e/Airplane_silhouette.svg';
-    const CORS_PROXY = 'https://corsproxy.io/?';
 
     function calcDistanceNM(lat1, lon1, lat2, lon2) {
       const R = 3440.065;
@@ -489,14 +488,20 @@
 
     async function fetchWithProxy(targetUrl) {
       try {
-        const res = await fetch(`${CORS_PROXY}${encodeURIComponent(targetUrl)}`);
+        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
+        const res = await fetch(proxyUrl);
         if (res.ok) {
-          const data = await res.json();
-          if (data && data.photos && data.photos.length > 0) {
-            return data.photos[0].thumbnail_large?.src || data.photos[0].thumbnail?.src;
+          const wrapper = await res.json();
+          if (wrapper && wrapper.contents) {
+            const data = JSON.parse(wrapper.contents);
+            if (data && data.photos && data.photos.length > 0) {
+              return data.photos[0].thumbnail_large?.src || data.photos[0].thumbnail?.src;
+            }
           }
         }
-      } catch (e) {}
+      } catch (e) {
+        console.warn('Proxy fetch error:', e);
+      }
       return null;
     }
 
@@ -512,7 +517,7 @@
       if (trackKey === currentTrackedKey) return;
       currentTrackedKey = trackKey;
 
-      // 1. Primary: Match exact Tail Registration on Planespotters.net via CORS Proxy
+      // 1. Primary: Match exact Tail Registration on Planespotters.net
       if (reg) {
         const photoUrl = await fetchWithProxy(`https://api.planespotters.net/pub/photos/reg/${encodeURIComponent(reg)}`);
         if (photoUrl) {
@@ -521,7 +526,7 @@
         }
       }
 
-      // 2. Secondary: Match by Hex Code on Planespotters.net via CORS Proxy
+      // 2. Secondary: Match by Hex Code on Planespotters.net
       if (hex) {
         const photoUrl = await fetchWithProxy(`https://api.planespotters.net/pub/photos/hex/${encodeURIComponent(hex)}`);
         if (photoUrl) {
@@ -530,7 +535,7 @@
         }
       }
 
-      // 3. Fallback: Match by ICAO Aircraft Type on Planespotters.net (shows same model)
+      // 3. Fallback: Match by ICAO Aircraft Type on Planespotters.net
       if (typeCode) {
         const photoUrl = await fetchWithProxy(`https://api.planespotters.net/pub/photos/icao/${encodeURIComponent(typeCode)}`);
         if (photoUrl) {
@@ -539,7 +544,7 @@
         }
       }
 
-      // 4. Guaranteed Aircraft Silhouette Fallback (Clean SVG)
+      // 4. Guaranteed Aircraft Silhouette Fallback
       imgEl.src = GENERIC_AIRCRAFT_IMAGE;
     }
 
