@@ -376,17 +376,14 @@
     let map = null;
     let canvas = null;
     let ctx = null;
-    let sweepAngle = 0;
     let liveAircraft = [];
     let lockedAircraft = null;
     let isFetching = false;
 
-    // Audio & Speech Alert State (Forced ON)
     const audioAlertsEnabled = true;
     const announcedMilHexes = new Set();
     let audioCtx = null;
 
-    // Force initialize audio context instantly on load for Kiosk / Standalone displays
     function initKioskAudio() {
       try {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -437,11 +434,6 @@
       if (num >= 0x3C0000 && num <= 0x3FFFFF) return "Germany";
       if (num >= 0x300000 && num <= 0x33FFFF) return "Italy";
       if (num >= 0x340000 && num <= 0x37FFFF) return "Spain";
-      if (num >= 0x480000 && num <= 0x48FFFF) return "Netherlands";
-      if (num >= 0x7C0000 && num <= 0x7FFFFF) return "Australia";
-      if (num >= 0x840000 && num <= 0x87FFFF) return "Japan";
-      if (num >= 0x100000 && num <= 0x1FFFFF) return "Russia";
-      if (num >= 0x780000 && num <= 0x7BFFFF) return "China";
       return "Allied Airspace";
     }
 
@@ -661,14 +653,6 @@
       return false;
     }
 
-    function getAircraftCategory(ac) {
-      const type = (ac.t || '').toUpperCase();
-      const cat = (ac.category || '').toUpperCase();
-      if (cat.startsWith('H') || ['R44', 'H135', 'H145'].some(s => type.includes(s))) return 'HELICOPTER';
-      if (isMilitary(ac)) return 'FIGHTER_MILITARY';
-      return 'NARROWBODY';
-    }
-
     function renderFlightBoard(acList) {
       const gridEl = document.getElementById('aircraft-grid');
       if (!gridEl) return;
@@ -684,7 +668,6 @@
       militaryList.forEach((ac, index) => {
         if (!ac.lat || !ac.lon) return;
 
-        // Triggers audio tone + speech synthesis announcement automatically
         announceMilitaryAircraft(ac);
 
         const dist = calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon);
@@ -762,6 +745,33 @@
     function drawRadarScope() {
       if (!ctx || !canvas || !map) return;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Render all active aircraft onto the canvas map overlay
+      if (liveAircraft && liveAircraft.length > 0) {
+        liveAircraft.forEach(ac => {
+          if (!ac.lat || !ac.lon) return;
+          
+          const pt = map.latLngToContainerPoint([ac.lat, ac.lon]);
+          const isMil = isMilitary(ac);
+          const isEmg = ac.squawk === '7500' || ac.squawk === '7600' || ac.squawk === '7700';
+
+          // Draw target blip
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, isMil || isEmg ? 6 : 4, 0, 2 * Math.PI);
+          ctx.fillStyle = isEmg ? '#ef4444' : (isMil ? '#ff007f' : '#3b82f6');
+          ctx.fill();
+          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = '#ffffff';
+          ctx.stroke();
+
+          // Draw target callsign/label
+          ctx.fillStyle = '#f8fafc';
+          ctx.font = 'bold 11px system-ui';
+          const label = ac.flight ? ac.flight.trim() : ac.hex;
+          ctx.fillText(label, pt.x + 8, pt.y + 4);
+        });
+      }
+
       requestAnimationFrame(drawRadarScope);
     }
 
@@ -769,9 +779,7 @@
       canvas = document.getElementById('radarCanvas');
       ctx = canvas.getContext('2d');
 
-      // Initialize audio instantly on window load for unattended displays
       initKioskAudio();
-
       initMap();
       resizeCanvas();
       window.addEventListener('resize', resizeCanvas);
