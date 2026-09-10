@@ -221,7 +221,7 @@
 
     <aside class="sidebar">
       <div class="panel">
-        <div class="panel-title">Military Flights (50 NM Radius)</div>
+        <div class="panel-title">Live Flights (50 NM Radius)</div>
         <div id="aircraft-grid" class="aircraft-grid">
           <div style="color: var(--text-dim); font-size: 0.85rem;">Searching airspace...</div>
         </div>
@@ -273,29 +273,6 @@
                 Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
                 Math.sin(dLon / 2) * Math.sin(dLon / 2);
       return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    }
-
-    function isMilitaryAircraft(ac) {
-      if (ac.dbFlags !== undefined && (ac.dbFlags & 1) !== 0) return top;
-      if (ac.mil === true || ac.mil === 1) return true;
-      if (ac.t === 'Military') return true;
-
-      const flight = (ac.flight || '').trim().toUpperCase();
-      const hex = (ac.hex || '').trim().toUpperCase();
-
-      const milPrefixes = [
-        'RFR', 'RRR', 'CNV', 'NAVY', 'RCH', 'C2', 'ASCOT', 'VIPER', 'HAWK', 
-        'Sentry', 'REACH', 'VALKER', 'FORCE', 'JAKE', 'TOPCAT', 'BOEING',
-        'AAC', 'GAF', 'FAF', 'IAM', 'BAF', 'AME', 'HRZ', 'CTM', 'CEF'
-      ];
-      if (milPrefixes.some(p => flight.startsWith(p))) return true;
-
-      const milTypes = ['A400', 'C17', 'C130', 'A332', 'P8', 'KC135', 'E3TF', 'T45', 'F16', 'F35', 'TYPH'];
-      if (ac.t && milTypes.some(type => ac.t.toUpperCase().includes(type))) return true;
-
-      if (hex.startsWith('43C') || hex.startsWith('AE') || hex.startsWith('3E8') || hex.startsWith('3FA')) return true;
-
-      return false;
     }
 
     function initMap() {
@@ -351,7 +328,6 @@
       if (isFetching) return;
       isFetching = true;
 
-      // Use a CORS-friendly endpoint mirror compatible with ADS-B Exchange architecture 
       const url = `https://api.adsb.lol/v2/lat/${ADSB_CONFIG.lat}/lon/${ADSB_CONFIG.lon}/dist/${ADSB_CONFIG.radiusNM}`;
 
       try {
@@ -365,20 +341,8 @@
         renderFlightBoard(activeAircraft);
         updateNearestScrollboard(activeAircraft);
       } catch (err) {
-        console.warn("Primary fetch failed, using fallback feed...", err);
-        try {
-          // Fallback direct endpoint feed
-          const fallbackRes = await fetch('https://api.adsb.lol/v2/mil', { mode: 'cors' });
-          if (fallbackRes.ok) {
-            const fallbackData = await fallbackRes.json();
-            activeAircraft = fallbackData.ac || fallbackData.aircraft || [];
-            updateConnectionStatus(`Status: Tracking via Global Feed (${activeAircraft.length})`);
-            renderFlightBoard(activeAircraft);
-            updateNearestScrollboard(activeAircraft);
-          }
-        } catch (innerErr) {
-          updateConnectionStatus("Status: Connection Offline");
-        }
+        console.warn("Primary fetch failed, checking connection...", err);
+        updateConnectionStatus("Status: Connection Retry...");
       } finally {
         isFetching = false;
       }
@@ -394,22 +358,29 @@
       if (!gridEl) return;
       gridEl.innerHTML = '';
 
-      const militaryValid = acList.filter(ac => {
+      const validFlights = acList.filter(ac => {
         if (!ac.lat || !ac.lon) return false;
         const dist = calcDistanceNM(ADSB_CONFIG.lat, ADSB_CONFIG.lon, ac.lat, ac.lon);
-        return dist <= ADSB_CONFIG.radiusNM && isMilitaryAircraft(ac);
+        return dist <= ADSB_CONFIG.radiusNM;
       });
 
-      if (militaryValid.length === 0) {
-        gridEl.innerHTML = '<div style="color: var(--text-dim); font-size: 0.85rem;">No military flights detected in 50 NM</div>';
+      if (validFlights.length === 0) {
+        gridEl.innerHTML = '<div style="color: var(--text-dim); font-size: 0.85rem;">No flights detected in 50 NM</div>';
         return;
       }
 
-      militaryValid.forEach(ac => {
+      // Sort by closest distance first
+      validFlights.sort((a, b) => {
+        const distA = calcDistanceNM(ADSB_CONFIG.lat, ADSB_CONFIG.lon, a.lat, a.lon);
+        const distB = calcDistanceNM(ADSB_CONFIG.lat, ADSB_CONFIG.lon, b.lat, b.lon);
+        return distA - distB;
+      });
+
+      validFlights.forEach(ac => {
         const flightName = ac.flight ? ac.flight.trim() : (ac.hex ? ac.hex.toUpperCase() : 'N/A');
-        const planeType = ac.t || 'MIL';
-        const alt = ac.alt_baro || ac.alt_geom || 0;
-        const speed = ac.gs ? `${Math.round(ac.gs)} kts` : 'N/A';
+        const planeType = ac.t || 'AIR';
+        const alt = ac.alt_baro === 'ground' ? 'Ground' : `${ac.alt_baro || ac.alt_geom || 0} ft`;
+        const speed = ac.gs !== undefined ? `${Math.round(ac.gs)} kts` : 'N/A';
         const dist = calcDistanceNM(ADSB_CONFIG.lat, ADSB_CONFIG.lon, ac.lat, ac.lon);
 
         const card = document.createElement('div');
@@ -421,7 +392,7 @@
           </div>
           <div style="text-align:right;">
             <div style="font-weight:bold; color:var(--accent-green);">${dist.toFixed(1)} NM</div>
-            <div style="font-size:0.75rem; color:var(--text-dim);">${alt} ft</div>
+            <div style="font-size:0.75rem; color:var(--text-dim);">${alt}</div>
           </div>
         `;
         gridEl.appendChild(card);
@@ -445,9 +416,10 @@
       const nearest = valid[0];
       const dist = calcDistanceNM(ADSB_CONFIG.lat, ADSB_CONFIG.lon, nearest.lat, nearest.lon);
       const callsign = nearest.flight ? nearest.flight.trim() : nearest.hex;
+      const altDisplay = nearest.alt_baro === 'ground' ? 'Ground' : `${nearest.alt_baro || 0} ft`;
 
       document.getElementById('sb-distance').innerText = `${dist.toFixed(1)} NM`;
-      document.getElementById('sb-alt').innerText = `Alt: ${nearest.alt_baro || 0} ft`;
+      document.getElementById('sb-alt').innerText = `Alt: ${altDisplay}`;
       document.getElementById('sb-speed').innerText = `Speed: ${Math.round(nearest.gs || 0)} kts`;
       document.getElementById('sb-airline').innerText = callsign;
       document.getElementById('sb-type').innerText = `Type: ${nearest.t || 'N/A'}`;
