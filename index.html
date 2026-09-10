@@ -303,7 +303,7 @@
         keyboard: false
       }).setView([userConfig.lat, userConfig.lon], 8);
 
-      // Esri Dark Gray Base Map (Free, no API key required)
+      // Free Esri Dark Canvas basemap (no API keys required)
       L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
         maxZoom: 16
       }).addTo(map);
@@ -342,28 +342,33 @@
       }
     }
 
-    // Direct native fetch using lat/lon endpoint with fallback to adsb.fi
+    // Direct fetch against current valid endpoint structures
     async function fetchADSBData() {
-      const lat = userConfig.lat;
-      const lon = userConfig.lon;
-      
-      // Endpoints directly supporting native CORS without query parameters
-      const urls = [
+      const lat = userConfig.lat.toFixed(4);
+      const lon = userConfig.lon.toFixed(4);
+
+      const endpoints = [
         `https://api.adsb.lol/v2/lat/${lat}/lon/${lon}/dist/50`,
         `https://api.adsb.fi/v2/lat/${lat}/lon/${lon}/dist/50`
       ];
 
-      for (const url of urls) {
+      for (const url of endpoints) {
         try {
-          const res = await fetch(url);
-          if (res.ok) {
-            const data = await res.json();
-            if (data && (data.ac || data.aircraft)) {
-              return { acList: data.ac || data.aircraft, source: url.includes('lol') ? 'ADSB.lol' : 'ADSB.fi' };
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+          const response = await fetch(url, { signal: controller.signal });
+          clearTimeout(timeoutId);
+
+          if (response.ok) {
+            const data = await response.json();
+            const list = data.ac || data.aircraft || [];
+            if (Array.isArray(list)) {
+              return { acList: list, source: url.includes('lol') ? 'ADSB.lol' : 'ADSB.fi' };
             }
           }
-        } catch (e) {
-          console.warn(`Fetch failed for ${url}:`, e);
+        } catch (err) {
+          console.warn(`Endpoint failed (${url}):`, err);
         }
       }
 
