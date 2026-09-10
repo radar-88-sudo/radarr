@@ -99,10 +99,6 @@
       background: #090d16;
     }
 
-    .leaflet-tile-pane {
-      filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg);
-    }
-
     canvas {
       position: absolute;
       top: 0;
@@ -315,8 +311,10 @@
         keyboard: false
       });
 
-      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19
+      // Simple dark vector tile style (no labels, clean minimalism)
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19,
+        subdomains: 'abcd'
       }).addTo(map);
 
       const radiusMeters = userConfig.radiusNM * 1852;
