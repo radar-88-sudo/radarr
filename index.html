@@ -258,7 +258,7 @@
   <footer>
     <div class="scrollboard">
       <div class="photo-section">
-        <img id="sb-photo" src="https://upload.wikimedia.org/wikipedia/commons/8/8e/Airplane_silhouette.svg" alt="Aircraft Silhouette" onerror="this.src='https://upload.wikimedia.org/wikipedia/commons/8/8e/Airplane_silhouette.svg'">
+        <img id="sb-photo" src="https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?auto=format&fit=crop&w=300&q=80" alt="Aircraft Silhouette" onerror="this.src='https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?auto=format&fit=crop&w=300&q=80'">
       </div>
 
       <div class="info-section">
@@ -288,7 +288,7 @@
     let nextPollDelayMs = 20000;
     let currentTrackedKey = null;
 
-    const GENERIC_AIRCRAFT_IMAGE = 'https://upload.wikimedia.org/wikipedia/commons/8/8e/Airplane_silhouette.svg';
+    const GENERIC_AIRCRAFT_IMAGE = 'https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?auto=format&fit=crop&w=300&q=80';
 
     function calcDistanceNM(lat1, lon1, lat2, lon2) {
       const R = 3440.065;
@@ -486,88 +486,69 @@
       });
     }
 
-    // Helper function: Perform Planespotters query using JSONP to bypass CORS/CORB
-    function fetchPlanespottersJSONP(path) {
-      return new Promise((resolve) => {
-        const cbName = 'cb_ps_' + Math.random().toString(36).substring(2, 9);
-        const script = document.createElement('script');
-
-        window[cbName] = function(data) {
-          delete window[cbName];
-          if (script.parentNode) script.parentNode.removeChild(script);
-          if (data && data.photos && data.photos.length > 0) {
-            resolve(data.photos[0].thumbnail_large?.src || data.photos[0].thumbnail?.src || null);
-          } else {
-            resolve(null);
-          }
-        };
-
-        script.onerror = function() {
-          delete window[cbName];
-          if (script.parentNode) script.parentNode.removeChild(script);
-          resolve(null);
-        };
-
-        script.src = `https://api.planespotters.net/pub/photos/${path}?callback=${cbName}`;
-        document.body.appendChild(script);
-      });
-    }
-
     async function updateAircraftPhoto(ac) {
       const imgEl = document.getElementById('sb-photo');
       if (!imgEl || !ac) return;
 
-      const reg = (ac.reg || ac.r || '').trim();
+      const reg = (ac.reg || '').trim();
       const hex = (ac.hex || '').trim();
-      const typeCode = (ac.t || ac.type || '').trim();
-      const trackKey = `${reg}_${hex}_${typeCode}`;
+      const trackKey = `${reg}_${hex}`;
 
       if (trackKey === currentTrackedKey) return;
       currentTrackedKey = trackKey;
 
-      // 1. Primary: Match exact Tail Registration on Planespotters.net
+      // 1. Fetch exact photo by Registration via Planespotters API
       if (reg) {
-        const photoUrl = await fetchPlanespottersJSONP(`reg/${encodeURIComponent(reg)}`);
-        if (photoUrl) {
-          imgEl.src = photoUrl;
-          return;
-        }
+        try {
+          const res = await fetch(`https://api.planespotters.net/pub/photos/reg/${encodeURIComponent(reg)}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.photos && data.photos.length > 0) {
+              imgEl.src = data.photos[0].thumbnail_large.src;
+              return;
+            }
+          }
+        } catch (e) {}
       }
 
-      // 2. Secondary: Match by Hex Code on Planespotters.net
+      // 2. Fallback to Planespotters API via Hex code
       if (hex) {
-        const photoUrl = await fetchPlanespottersJSONP(`hex/${encodeURIComponent(hex)}`);
-        if (photoUrl) {
-          imgEl.src = photoUrl;
-          return;
-        }
+        try {
+          const res = await fetch(`https://api.planespotters.net/pub/photos/hex/${encodeURIComponent(hex)}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.photos && data.photos.length > 0) {
+              imgEl.src = data.photos[0].thumbnail_large.src;
+              return;
+            }
+          }
+        } catch (e) {}
       }
 
-      // 3. Fallback: Match by ICAO Aircraft Type on Planespotters.net (shows same model)
-      if (typeCode) {
-        const photoUrl = await fetchPlanespottersJSONP(`icao/${encodeURIComponent(typeCode)}`);
-        if (photoUrl) {
-          imgEl.src = photoUrl;
-          return;
-        }
+      // 3. Fallback to Wikimedia Commons search by exact tail registration
+      if (reg) {
+        try {
+          const query = encodeURIComponent(`"${reg}" aircraft`);
+          const res = await fetch(`https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${query}&gsrnamespace=6&gsrlimit=1&prop=imageinfo&iiprop=url&iiurlwidth=320&format=json&origin=*`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.query && data.query.pages) {
+              const pages = Object.values(data.query.pages);
+              if (pages.length > 0 && pages[0].imageinfo && pages[0].imageinfo[0]) {
+                imgEl.src = pages[0].imageinfo[0].thumburl || pages[0].imageinfo[0].url;
+                return;
+              }
+            }
+          }
+        } catch (e) {}
       }
 
-      // 4. Guaranteed Aircraft Silhouette Fallback (Clean SVG)
+      // Final fallback image if no tail photo exists
       imgEl.src = GENERIC_AIRCRAFT_IMAGE;
     }
 
     function updateNearestScrollboard(acList) {
-      const valid = acList.filter(ac => {
-        if (!ac.lat || !ac.lon) return false;
-        if (calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon) > 50) return false;
-        
-        // Ignore G103 aircraft types from locking on
-        const acType = (ac.t || ac.type || '').trim().toUpperCase();
-        if (acType === 'G103') return false;
-
-        return true;
-      });
-
+      const valid = acList.filter(ac => ac.lat && ac.lon && calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon) <= 50);
       if (valid.length === 0) return;
 
       valid.sort((a, b) => calcDistanceNM(userConfig.lat, userConfig.lon, a.lat, a.lon) - calcDistanceNM(userConfig.lat, userConfig.lon, b.lat, b.lon));
