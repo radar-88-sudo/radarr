@@ -350,21 +350,22 @@
 
     async function fetchADSBData() {
       const { lat, lon } = userConfig;
+      
+      // Bypass browser extension request interceptors by using CodeTabs clean proxy
+      const proxy = "https://api.codetabs.com/v1/proxy?quest=";
 
-      // Primary source: ADSB.one (direct connection, no proxy or CORS blocks)
       try {
-        const target = `https://api.adsb.one/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
-        const res = await fetch(target);
+        const target = `https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
+        const res = await fetch(proxy + encodeURIComponent(target));
         if (res.ok) {
           const data = await res.json();
-          if (data && data.ac) return { acList: data.ac, source: 'ADSB.one' };
+          if (data && data.ac) return { acList: data.ac, source: 'ADSB.lol' };
         }
       } catch (e) {}
 
-      // Fallback source: Airplanes.live direct endpoint
       try {
         const target = `https://api.airplanes.live/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
-        const res = await fetch(target);
+        const res = await fetch(proxy + encodeURIComponent(target));
         if (res.ok) {
           const data = await res.json();
           if (data && data.ac) return { acList: data.ac, source: 'Airplanes.live' };
