@@ -73,7 +73,7 @@
       flex: 1;
       padding: 0.5rem 0.75rem;
       display: grid;
-      grid-template-columns: 1fr 340px;
+      grid-template-columns: 1fr 360px;
       gap: 0.75rem;
       width: 100%;
       max-width: 1920px;
@@ -150,8 +150,27 @@
       padding: 0.4rem 0.6rem;
       border-radius: 6px;
       display: flex;
-      justify-content: space-between;
       align-items: center;
+      gap: 0.6rem;
+    }
+
+    .ac-thumb {
+      width: 52px;
+      height: 36px;
+      background: rgba(10, 15, 30, 0.9);
+      border: 1px solid var(--card-border);
+      border-radius: 4px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .ac-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
     }
 
     footer {
@@ -438,7 +457,7 @@
       
       if (isMil) {
         logoBox.innerHTML = `<span class="logo-fallback" style="color: var(--accent-military);">MILITARY</span>`;
-        return;
+        // Don't return immediately, try fetching photo via planespotters anyway if reg/hex exists
       }
 
       let photoUrl = null;
@@ -472,10 +491,49 @@
         return;
       }
       
-      if (icaoCode) {
-        logoBox.innerHTML = `<img src="https://pics.avs.io/al/150/150/${icaoCode}.png" alt="${icaoCode}" onerror="this.onerror=null; this.parentElement.innerHTML='<span class=\\'logo-fallback\\'>${icaoCode}</span>';">`;
+      if (!isMil) {
+        if (icaoCode) {
+          logoBox.innerHTML = `<img src="https://pics.avs.io/al/150/150/${icaoCode}.png" alt="${icaoCode}" onerror="this.onerror=null; this.parentElement.innerHTML='<span class=\\'logo-fallback\\'>${icaoCode}</span>';">`;
+        } else {
+          logoBox.innerHTML = `<span class="logo-fallback">NO PHOTO</span>`;
+        }
+      }
+    }
+
+    async function fetchCardPhoto(ac, thumbId) {
+      const thumbEl = document.getElementById(thumbId);
+      if (!thumbEl) return;
+
+      let photoUrl = null;
+
+      if (ac.r) {
+        try {
+          const res = await fetch(`https://api.planespotters.net/pub/photos/reg/${ac.r}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.photos && data.photos.length > 0) {
+              photoUrl = data.photos[0].thumbnail_large.src;
+            }
+          }
+        } catch (err) {}
+      }
+
+      if (!photoUrl && ac.hex) {
+        try {
+          const res = await fetch(`https://api.planespotters.net/pub/photos/hex/${ac.hex}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.photos && data.photos.length > 0) {
+              photoUrl = data.photos[0].thumbnail_large.src;
+            }
+          }
+        } catch (err) {}
+      }
+
+      if (photoUrl) {
+        thumbEl.innerHTML = `<img src="${photoUrl}" alt="Military Aircraft Photo">`;
       } else {
-        logoBox.innerHTML = `<span class="logo-fallback">NO PHOTO</span>`;
+        thumbEl.innerHTML = `<span style="font-size:0.55rem; color:var(--accent-military); font-weight:bold; text-align:center;">MIL</span>`;
       }
     }
 
@@ -583,7 +641,6 @@
         return false;
       }
 
-      // Check database flags (dbFlags & 1 indicates military in ADSB.lol / Airplanes.live)
       const dbFlags = ac.dbFlags !== undefined ? ac.dbFlags : (ac.db_flags !== undefined ? ac.db_flags : 0);
       if (dbFlags & 1) {
         return true;
@@ -654,22 +711,29 @@
         return;
       }
 
-      militaryList.forEach(ac => {
+      militaryList.forEach((ac, index) => {
         if (!ac.lat || !ac.lon) return;
         const dist = calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon);
+        const cardId = `mil-card-${ac.hex}-${index}`;
         const card = document.createElement('div');
         card.className = 'ac-card';
         card.innerHTML = `
-          <div>
-            <div style="font-weight:bold; font-size:0.85rem; color:var(--accent-military);">${ac.flight ? ac.flight.trim() : ac.hex}</div>
+          <div class="ac-thumb" id="${cardId}-thumb">
+            <span style="font-size:0.55rem; color:var(--accent-military); font-weight:bold;">MIL</span>
+          </div>
+          <div style="flex: 1; min-width: 0;">
+            <div style="font-weight:bold; font-size:0.85rem; color:var(--accent-military); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${ac.flight ? ac.flight.trim() : ac.hex}</div>
             <div style="font-size:0.7rem; color:var(--text-dim);">[${ac.t || 'MIL'}] • ${ac.gs || 0} kts</div>
           </div>
-          <div style="text-align:right;">
+          <div style="text-align:right; flex-shrink: 0;">
             <div style="font-weight:bold; color:var(--accent-green); font-size:0.85rem;">${dist.toFixed(1)} NM</div>
             <div style="font-size:0.7rem; color:var(--text-dim);">${ac.alt_baro || 'Ground'} ft</div>
           </div>
         `;
         gridEl.appendChild(card);
+
+        // Fetch photo asynchronously for sidebar card
+        fetchCardPhoto(ac, `${cardId}-thumb`);
       });
     }
 
