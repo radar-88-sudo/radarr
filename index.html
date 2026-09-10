@@ -315,7 +315,8 @@
     let liveAircraft = [];
     let isFetching = false;
     let pollIntervalTimer = null;
-    let currentIntervalMs = 15000;
+    let currentIntervalMs = 4000; // Start fast on load
+    let hasConnectedOnce = false;
 
     const airportDatabase = {
       'EGLL': 'London Heathrow, UK',
@@ -410,9 +411,7 @@
               photoUrl = data.photos[0].thumbnail_large.src;
             }
           }
-        } catch (err) {
-          console.warn('Photo lookup by registration failed:', err);
-        }
+        } catch (err) {}
       }
 
       if (!photoUrl && ac.hex) {
@@ -424,9 +423,7 @@
               photoUrl = data.photos[0].thumbnail_large.src;
             }
           }
-        } catch (err) {
-          console.warn('Photo lookup by hex failed:', err);
-        }
+        } catch (err) {}
       }
 
       if (photoUrl) {
@@ -493,42 +490,28 @@
       if (isFetching) return;
       isFetching = true;
 
-      const directUrls = [
-        `https://api.adsb.lol/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`,
-        `https://api.airplanes.live/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`
-      ];
+      const primaryUrl = `https://api.adsb.lol/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`;
+      const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(primaryUrl)}`;
+      const backupUrl = `https://api.airplanes.live/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`;
+      const backupProxyUrl = `https://corsproxy.io/?${encodeURIComponent(backupUrl)}`;
 
+      const endpoints = [primaryUrl, proxyUrl, backupUrl, backupProxyUrl];
       let success = false;
 
-      for (let url of directUrls) {
+      for (let url of endpoints) {
         try {
-          const response = await fetch(url, { mode: 'cors' });
+          const response = await fetch(url);
           if (response.ok) {
             const data = await response.json();
-            if (data && data.ac) {
-              liveAircraft = data.ac;
+            const aircrafts = data.ac || data.aircraft;
+            if (aircrafts) {
+              liveAircraft = aircrafts;
               updateUIState(true);
               success = true;
               break;
             }
           }
-        } catch (err) {
-          try {
-            const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
-            const proxyResp = await fetch(proxyUrl);
-            if (proxyResp.ok) {
-              const data = await proxyResp.json();
-              if (data && data.ac) {
-                liveAircraft = data.ac;
-                updateUIState(true);
-                success = true;
-                break;
-              }
-            }
-          } catch (proxyErr) {
-            console.warn('Endpoint & Proxy attempt failed:', proxyErr);
-          }
-        }
+        } catch (err) {}
       }
 
       if (!success) {
@@ -541,15 +524,17 @@
     function updateUIState(isConnected) {
       const statusEl = document.getElementById('connection-status');
       if (isConnected) {
+        hasConnectedOnce = true;
         statusEl.innerText = `Live Connected (${liveAircraft.length} targets)`;
         statusEl.style.color = '#10b981';
         renderFlightBoard(liveAircraft);
         updateNearestScrollboard(liveAircraft);
-        currentIntervalMs = 15000;
+        currentIntervalMs = 15000; // Normal polling once connected
       } else {
-        statusEl.innerText = `Retrying Live Stream...`;
+        statusEl.innerText = `Connecting to Live Stream...`;
         statusEl.style.color = '#f59e0b';
-        currentIntervalMs = Math.min(currentIntervalMs * 1.5, 30000);
+        // If not connected yet, retry fast (every 4 seconds). If dropped later, retry every 6 seconds.
+        currentIntervalMs = hasConnectedOnce ? 6000 : 4000;
       }
       resetPollingInterval();
     }
@@ -595,7 +580,6 @@
       const flight = (ac.flight || '').toUpperCase();
       const cat = (ac.category || '').toUpperCase();
 
-      // Explicitly exclude civilian emergency / HEMS / police services
       const civilianExclusions = ['HLE', 'NPAS', 'TRA', 'POL', 'AMB'];
       if (civilianExclusions.some(prefix => flight.startsWith(prefix))) {
         return false;
@@ -605,7 +589,6 @@
       if (['F16', 'F15', 'F18', 'F35', 'F22', 'EF20', 'TOR', 'HAWK', 'A10', 'C130', 'C17', 'A400', 'K35R', 'E3TF', 'V22', 'CH47', 'AH64', 'UH60', 'NH90', 'TYPH'].some(s => type.includes(s))) {
         return true;
       }
-      // Added 'SHF' and 'VORTEX' for UK Support Helicopter Force callsigns
       if (['RRR', 'ASCOT', 'SHF', 'VORTEX', 'RCH', 'DUKE', 'BOOM', 'REACH', 'CNV'].some(prefix => flight.startsWith(prefix))) {
         return true;
       }
