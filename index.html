@@ -350,25 +350,28 @@
 
     async function fetchADSBData() {
       const { lat, lon } = userConfig;
-      const corsProxy = "https://corsproxy.io/?";
 
-      try {
-        const target = `https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
-        const res = await fetch(corsProxy + encodeURIComponent(target));
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.ac) return { acList: data.ac, source: 'ADSB.lol' };
-        }
-      } catch (e) {}
+      // Use AllOrigins JSON endpoint wrappers which successfully bypass strict CORS & WAF limits
+      const endpoints = [
+        `https://api.allorigins.win/get?url=${encodeURIComponent(`https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`)}`,
+        `https://api.allorigins.win/get?url=${encodeURIComponent(`https://api.airplanes.live/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`)}`
+      ];
 
-      try {
-        const target = `https://api.airplanes.live/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
-        const res = await fetch(corsProxy + encodeURIComponent(target));
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.ac) return { acList: data.ac, source: 'Airplanes.live' };
-        }
-      } catch (e) {}
+      for (const endpoint of endpoints) {
+        try {
+          const res = await fetch(endpoint);
+          if (res.ok) {
+            const wrapper = await res.json();
+            if (wrapper && wrapper.contents) {
+              const data = JSON.parse(wrapper.contents);
+              if (data && data.ac) {
+                const sourceName = endpoint.includes('adsb.lol') ? 'ADSB.lol' : 'Airplanes.live';
+                return { acList: data.ac, source: sourceName };
+              }
+            }
+          }
+        } catch (e) {}
+      }
 
       return null;
     }
