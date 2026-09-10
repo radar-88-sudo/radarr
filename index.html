@@ -466,7 +466,7 @@
 
       ctx.setLineDash([]);
 
-      // Draw rotated aircraft vector silhouettes
+      // Draw larger, crisp vector airplane shapes oriented to heading
       liveAircraft.forEach(ac => {
         if (!ac.lat || !ac.lon) return;
         const p = map.latLngToContainerPoint([ac.lat, ac.lon]);
@@ -476,39 +476,39 @@
         ctx.translate(p.x, p.y);
         ctx.rotate(trackAngle);
 
-        // Airplane shape
+        // Scaled-up, detailed aircraft vector silhouette
         ctx.beginPath();
-        ctx.moveTo(0, -9);     // Nose
-        ctx.lineTo(2.5, -2);   // Right wing front
-        ctx.lineTo(9, 2);      // Right wing tip
-        ctx.lineTo(2.5, 4);    // Right wing back
-        ctx.lineTo(1.5, 7);    // Right tail
-        ctx.lineTo(3.5, 9);    // Right stabilizer tip
-        ctx.lineTo(0.5, 8);    // Right stabilizer inner
-        ctx.lineTo(0, 7.5);    // Tail center
-        ctx.lineTo(-0.5, 8);   // Left stabilizer inner
-        ctx.lineTo(-3.5, 9);   // Left stabilizer tip
-        ctx.lineTo(-1.5, 7);   // Left tail
-        ctx.lineTo(-2.5, 4);   // Left wing back
-        ctx.lineTo(-9, 2);     // Left wing tip
-        ctx.lineTo(-2.5, -2);  // Left wing front
+        ctx.moveTo(0, -14);     // Nose
+        ctx.lineTo(4, -4);     // Right wing front
+        ctx.lineTo(15, 3);     // Right wing tip
+        ctx.lineTo(4, 7);      // Right wing back
+        ctx.lineTo(2.5, 12);   // Right tail
+        ctx.lineTo(5.5, 15);   // Right stabilizer tip
+        ctx.lineTo(1, 13);     // Right stabilizer inner
+        ctx.lineTo(0, 12.5);   // Tail center
+        ctx.lineTo(-1, 13);    // Left stabilizer inner
+        ctx.lineTo(-5.5, 15);  // Left stabilizer tip
+        ctx.lineTo(-2.5, 12);  // Left tail
+        ctx.lineTo(-4, 7);     // Left wing back
+        ctx.lineTo(-15, 3);    // Left wing tip
+        ctx.lineTo(-4, -4);    // Left wing front
         ctx.closePath();
 
         ctx.fillStyle = '#10b981';
         ctx.shadowColor = '#059669';
-        ctx.shadowBlur = 6;
+        ctx.shadowBlur = 8;
         ctx.fill();
         ctx.shadowBlur = 0;
 
-        ctx.strokeStyle = '#047857';
-        ctx.lineWidth = 1;
+        ctx.strokeStyle = '#022c22';
+        ctx.lineWidth = 1.5;
         ctx.stroke();
         ctx.restore();
 
         // Aircraft callsign label
         ctx.font = 'bold 11px monospace';
         ctx.fillStyle = '#1e293b';
-        ctx.fillText(ac.flight ? ac.flight.trim() : ac.hex, p.x + 10, p.y + 4);
+        ctx.fillText(ac.flight ? ac.flight.trim() : ac.hex, p.x + 12, p.y + 4);
       });
 
       const sweepLen = Math.max(canvas.width, canvas.height);
