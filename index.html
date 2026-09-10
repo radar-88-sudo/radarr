@@ -308,7 +308,10 @@
 
   <header>
     <h1><span class="pulse-dot"></span> Live ADSB Radar Scope (All Targets / Mil Sidebar)</h1>
-    <div id="connection-status" style="font-size: 0.8rem; color: var(--accent-blue);">Initializing Feed...</div>
+    <div style="display: flex; align-items: center; gap: 1rem;">
+      <button id="audio-alert-btn" onclick="toggleAudioAlerts()" style="background: rgba(30, 41, 59, 0.9); border: 1px solid var(--accent-green); color: var(--accent-green); padding: 0.25rem 0.6rem; border-radius: 6px; font-size: 0.75rem; cursor: pointer; font-weight: 600; transition: all 0.2s;">🔊 Alerts: ON</button>
+      <div id="connection-status" style="font-size: 0.8rem; color: var(--accent-blue);">Initializing Feed...</div>
+    </div>
   </header>
 
   <main>
@@ -377,6 +380,134 @@
     let liveAircraft = [];
     let lockedAircraft = null;
     let isFetching = false;
+
+    // Audio & Speech Alert State (Set to ON by default)
+    let audioAlertsEnabled = true;
+    const announcedMilHexes = new Set();
+    let audioCtx = null;
+
+    // Unlock audio context on first user interaction
+    window.addEventListener('click', () => {
+      if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+    }, { once: true });
+
+    const aircraftModelNames = {
+      'C17': 'Boeing C-17 Globemaster',
+      'C130': 'Lockheed C-130 Hercules',
+      'F16': 'Lockheed Martin F-16 Fighting Falcon',
+      'F15': 'McDonnell Douglas F-15 Eagle',
+      'F18': 'Boeing F/A-18 Hornet',
+      'F35': 'Lockheed Martin F-35 Lightning II',
+      'EF20': 'Eurofighter Typhoon',
+      'EUFI': 'Eurofighter Typhoon',
+      'TYPH': 'Eurofighter Typhoon',
+      'A400': 'Airbus A400M Atlas',
+      'K35R': 'Boeing KC-135 Stratotanker',
+      'KC135': 'Boeing KC-135 Stratotanker',
+      'P8': 'Boeing P-8 Poseidon',
+      'E3TF': 'Boeing E-3 Sentry AWACS',
+      'CH47': 'Boeing CH-47 Chinook',
+      'AH64': 'Boeing AH-64 Apache',
+      'UH60': 'Sikorsky UH-60 Black Hawk',
+      'V22': 'Bell Boeing V-22 Osprey',
+      'HAWK': 'BAE Systems Hawk',
+      'TOR': 'Panavia Tornado',
+      'RC135': 'Boeing RC-135 Rivet Joint'
+    };
+
+    function getAircraftModelName(typeCode) {
+      if (!typeCode) return 'Military Aircraft';
+      const clean = typeCode.toUpperCase().trim();
+      return aircraftModelNames[clean] || `Military Aircraft (${clean})`;
+    }
+
+    function getCountryFromHex(hexStr) {
+      if (!hexStr) return "Unknown Country";
+      const num = parseInt(hexStr, 16);
+      if (isNaN(num)) return "Unknown Country";
+
+      if (num >= 0xA00000 && num <= 0xAFFFFF) return "United States";
+      if (num >= 0x400000 && num <= 0x43FFFF) return "United Kingdom";
+      if (num >= 0x380000 && num <= 0x3BFFFF) return "France";
+      if (num >= 0x3C0000 && num <= 0x3FFFFF) return "Germany";
+      if (num >= 0x300000 && num <= 0x33FFFF) return "Italy";
+      if (num >= 0x340000 && num <= 0x37FFFF) return "Spain";
+      if (num >= 0x480000 && num <= 0x48FFFF) return "Netherlands";
+      if (num >= 0x7C0000 && num <= 0x7FFFFF) return "Australia";
+      if (num >= 0x840000 && num <= 0x87FFFF) return "Japan";
+      if (num >= 0x100000 && num <= 0x1FFFFF) return "Russia";
+      if (num >= 0x780000 && num <= 0x7BFFFF) return "China";
+      if (num >= 0xE00000 && num <= 0xE3FFFF) return "Argentina";
+      if (num >= 0xE40000 && num <= 0xE7FFFF) return "Brazil";
+      if (num >= 0xC00000 && num <= 0xC3FFFF) return "Canada";
+      return "Allied Airspace";
+    }
+
+    function toggleAudioAlerts() {
+      audioAlertsEnabled = !audioAlertsEnabled;
+      const btn = document.getElementById('audio-alert-btn');
+      if (audioAlertsEnabled) {
+        btn.innerText = '🔊 Alerts: ON';
+        btn.style.borderColor = 'var(--accent-green)';
+        btn.style.color = 'var(--accent-green)';
+        playAlertTone();
+      } else {
+        btn.innerText = '🔇 Alerts: OFF';
+        btn.style.borderColor = 'var(--card-border)';
+        btn.style.color = 'var(--text-dim)';
+      }
+    }
+
+    function playAlertTone() {
+      try {
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (audioCtx.state === 'suspended') {
+          audioCtx.resume();
+        }
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(440, audioCtx.currentTime + 0.15);
+        
+        gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+        
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.3);
+      } catch (e) {}
+    }
+
+    function announceMilitaryAircraft(ac) {
+      if (!audioAlertsEnabled) return;
+      if (announcedMilHexes.has(ac.hex)) return;
+
+      announcedMilHexes.add(ac.hex);
+      playAlertTone();
+
+      setTimeout(() => {
+        const modelName = getAircraftModelName(ac.t);
+        const country = getCountryFromHex(ac.hex);
+        const callsign = ac.flight ? ac.flight.trim() : 'Unknown callsign';
+        
+        const speechText = `Attention. Military aircraft detected. Callsign ${callsign}. Model: ${modelName}, from ${country}.`;
+        
+        if ('speechSynthesis' in window) {
+          const utterance = new SpeechSynthesisUtterance(speechText);
+          utterance.rate = 1.0;
+          utterance.pitch = 1.0;
+          window.speechSynthesis.speak(utterance);
+        }
+      }, 350);
+    }
 
     const airportDatabase = {
       'EGLL': 'London Heathrow, UK',
@@ -457,7 +588,6 @@
       
       if (isMil) {
         logoBox.innerHTML = `<span class="logo-fallback" style="color: var(--accent-military);">MILITARY</span>`;
-        // Don't return immediately, try fetching photo via planespotters anyway if reg/hex exists
       }
 
       let photoUrl = null;
@@ -635,7 +765,6 @@
       const type = (ac.t || '').toUpperCase();
       const flight = (ac.flight || '').toUpperCase();
 
-      // Explicitly override database flags for known civil types like C56X
       const forcedCivilianTypes = ['C56X', 'LJ35', 'BE40'];
       if (forcedCivilianTypes.some(s => type.includes(s))) {
         return false;
@@ -647,7 +776,6 @@
       }
 
       const cat = (ac.category || '').toUpperCase();
-
       const civilianExclusions = ['HLE', 'NPAS', 'TRA', 'POL', 'AMB'];
       if (civilianExclusions.some(prefix => flight.startsWith(prefix))) {
         return false;
@@ -713,6 +841,10 @@
 
       militaryList.forEach((ac, index) => {
         if (!ac.lat || !ac.lon) return;
+
+        // Trigger Audio & Voice Announcement for New Military Aircraft
+        announceMilitaryAircraft(ac);
+
         const dist = calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon);
         const cardId = `mil-card-${ac.hex}-${index}`;
         const card = document.createElement('div');
@@ -732,7 +864,6 @@
         `;
         gridEl.appendChild(card);
 
-        // Fetch photo asynchronously for sidebar card
         fetchCardPhoto(ac, `${cardId}-thumb`);
       });
     }
