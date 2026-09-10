@@ -304,7 +304,7 @@
         keyboard: false
       }).setView([userConfig.lat, userConfig.lon], 8);
 
-      // CartoDB Dark Matter tiles with proper subdomain routing
+      // CartoDB Dark Matter tiles with correct subdomain configuration
       L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
         maxZoom: 19,
         subdomains: ['a', 'b', 'c', 'd'],
@@ -347,47 +347,41 @@
       }
     }
 
-    // JSONP loader bypasses extension interceptors & CORS restrictions completely
-    function fetchJSONP(url) {
-      return new Promise((resolve, reject) => {
-        const callbackName = 'adsb_cb_' + Math.round(100000 * Math.random());
-        window[callbackName] = function(data) {
-          delete window[callbackName];
-          if (script.parentNode) script.parentNode.removeChild(script);
-          resolve(data);
-        };
-
-        const script = document.createElement('script');
-        script.src = `${url}${url.includes('?') ? '&' : '?'}callback=${callbackName}`;
-        script.onerror = function() {
-          delete window[callbackName];
-          if (script.parentNode) script.parentNode.removeChild(script);
-          reject(new Error('JSONP script load error'));
-        };
-
-        document.body.appendChild(script);
-      });
-    }
-
     async function fetchADSBData() {
       const { lat, lon } = userConfig;
       
+      // Attempt 1: Fetch via AllOrigins proxy wrapper safely bypassing GitHub Pages CORS limits
       try {
-        const data = await fetchJSONP(`https://api.airplanes.live/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`);
-        if (data && data.ac) {
-          return { acList: data.ac, source: 'Airplanes.live' };
+        const targetUrl = `https://api.airplanes.live/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
+        const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`);
+        if (res.ok) {
+          const wrapper = await res.json();
+          if (wrapper && wrapper.contents) {
+            const data = JSON.parse(wrapper.contents);
+            if (data && data.ac) {
+              return { acList: data.ac, source: 'Airplanes.live' };
+            }
+          }
         }
       } catch (e) {
-        console.warn('Airplanes.live JSONP error:', e);
+        console.warn('Airplanes.live proxy fetch warning:', e);
       }
 
+      // Attempt 2: Fallback to ADSB.lol via AllOrigins proxy
       try {
-        const data2 = await fetchJSONP(`https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`);
-        if (data2 && data2.ac) {
-          return { acList: data2.ac, source: 'ADSB.lol' };
+        const targetUrl2 = `https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
+        const res2 = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl2)}`);
+        if (res2.ok) {
+          const wrapper2 = await res2.json();
+          if (wrapper2 && wrapper2.contents) {
+            const data2 = JSON.parse(wrapper2.contents);
+            if (data2 && data2.ac) {
+              return { acList: data2.ac, source: 'ADSB.lol' };
+            }
+          }
         }
       } catch (e2) {
-        console.warn('ADSB.lol JSONP error:', e2);
+        console.warn('ADSB.lol proxy fetch warning:', e2);
       }
 
       return null;
