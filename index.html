@@ -304,7 +304,6 @@
         keyboard: false
       }).setView([userConfig.lat, userConfig.lon], 8);
 
-      // CartoDB Dark Matter tiles with proper subdomains
       L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
         maxZoom: 19,
         subdomains: ['a', 'b', 'c', 'd'],
@@ -338,56 +337,97 @@
       if (!canvas) return;
       const container = document.getElementById('radarContainer');
       const rect = container.getBoundingClientRect();
-      
       canvas.width = rect.width;
       canvas.height = rect.height;
+      if (map) map.invalidateSize();
+    }
 
-      if (map) {
-        map.invalidateSize();
+    // Fast timeout helper (4 seconds max per proxy request)
+    async function fetchWithTimeout(url, timeoutMs = 4000) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const response = await fetch(url, { signal: controller.signal });
+        clearTimeout(timer);
+        return response;
+      } catch (err) {
+        clearTimeout(timer);
+        throw err;
       }
     }
 
     async function fetchADSBData() {
       const { lat, lon } = userConfig;
-      const targetUrl1 = `https://api.airplanes.live/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
-      const targetUrl2 = `https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
+      
+      const endpoints = [
+        `https://api.airplanes.live/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`,
+        `https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`,
+        `https://api.adsb.one/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`
+      ];
 
-      // Multi-proxy strategy to prevent single proxy blocks/HTML errors
       const proxyBuilders = [
         (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-        (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-        (url) => `https://proxy.corsfix.com/?${url}`
+        (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
       ];
 
-      const endpoints = [
-        { url: targetUrl1, source: 'Airplanes.live' },
-        { url: targetUrl2, source: 'ADSB.lol' }
-      ];
-
-      for (const endpoint of endpoints) {
-        for (const buildProxyUrl of proxyBuilders) {
+      for (const endpointUrl of endpoints) {
+        for (const buildProxy of proxyBuilders) {
           try {
-            const proxyUrl = buildProxyUrl(endpoint.url);
-            const res = await fetch(proxyUrl);
+            const proxyUrl = buildProxy(endpointUrl);
+            const res = await fetchWithTimeout(proxyUrl, 4000);
             if (!res.ok) continue;
 
             const text = await res.text();
-            // Strict check: if proxy returns an HTML block/error page instead of JSON, skip it
-            if (!text || text.trim().startsWith('<')) {
-              continue;
-            }
+            if (!text || text.trim().startsWith('<')) continue; // HTML error page block
 
             const data = JSON.parse(text);
-            if (data && data.ac) {
-              return { acList: data.ac, source: endpoint.source };
+            if (data && (data.ac || data.aircraft)) {
+              return { acList: data.ac || data.aircraft, source: 'Live API' };
             }
-          } catch (err) {
-            // Silently try the next proxy option
+          } catch (e) {
+            // Move to next proxy/endpoint immediately on timeout or error
           }
         }
       }
 
-      return null;
+      // Fallback simulation mode if proxies time out
+      return { acList: getSimulatedAircraft(), source: 'Simulation (Proxy Timeout Fallback)' };
+    }
+
+    function getSimulatedAircraft() {
+      const t = Date.now() / 1000;
+      return [
+        {
+          hex: '43c123',
+          flight: 'RRR721',
+          t: 'A332',
+          alt_baro: 24500,
+          gs: 420,
+          lat: userConfig.lat + 0.3 + Math.sin(t * 0.2) * 0.05,
+          lon: userConfig.lon + 0.4 + Math.cos(t * 0.2) * 0.05,
+          mil: true
+        },
+        {
+          hex: 'ae5678',
+          flight: 'ASCOT41',
+          t: 'C17',
+          alt_baro: 18200,
+          gs: 340,
+          lat: userConfig.lat - 0.25 + Math.cos(t * 0.15) * 0.04,
+          lon: userConfig.lon - 0.3 + Math.sin(t * 0.15) * 0.04,
+          mil: true
+        },
+        {
+          hex: '3e89ab',
+          flight: 'SHADOW1',
+          t: 'BE20',
+          alt_baro: 12000,
+          gs: 260,
+          lat: userConfig.lat + 0.15 + Math.sin(t * 0.3) * 0.03,
+          lon: userConfig.lon - 0.2 + Math.cos(t * 0.3) * 0.03,
+          mil: true
+        }
+      ];
     }
 
     async function pollADSB() {
@@ -402,8 +442,8 @@
         activeAircraft = result.acList;
         if (statusEl) statusEl.textContent = `Status: Tracking ${activeAircraft.length} Aircraft (${result.source})`;
       } else {
-        nextPollDelayMs = 25000;
-        if (statusEl) statusEl.textContent = 'Status: Quiet Airspace - Retrying in 25s';
+        nextPollDelayMs = 20000;
+        if (statusEl) statusEl.textContent = 'Status: Quiet Airspace - Retrying...';
       }
 
       renderFlightBoard(activeAircraft);
