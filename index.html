@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Live Online Airspace Scope</title>
+  <title>Live ADSB Airspace Scope</title>
   
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
@@ -209,8 +209,8 @@
 <body>
 
   <header>
-    <h1><span class="pulse-dot"></span> Live Airspace Scope (50 NM Radius)</h1>
-    <div id="connection-status" style="font-size: 0.85rem; color: var(--accent-blue);">Status: Connecting to Live API...</div>
+    <h1><span class="pulse-dot"></span> Live ADSB Radar Scope (50 NM)</h1>
+    <div id="connection-status" style="font-size: 0.85rem; color: var(--accent-blue);">Connecting to ADSB.lol Network...</div>
   </header>
 
   <main>
@@ -221,12 +221,12 @@
 
     <aside class="sidebar">
       <div class="panel">
-        <div class="panel-title">Active Live Targets</div>
+        <div class="panel-title">Active Live Transponders</div>
         <div id="aircraft-grid" class="aircraft-grid">
-          <div style="color:var(--text-dim); font-size:0.85rem; padding: 1rem; text-align:center;">Scanning radio frequency...</div>
+          <div style="color:var(--text-dim); font-size:0.85rem; padding: 1rem; text-align:center;">Scanning live sector...</div>
         </div>
         <div id="status-bar" style="font-size:0.7rem; color:var(--text-dim); margin-top:0.5rem;">
-          Station: 52.9529° N, 0.9547° W (Live Feed)
+          Station: 52.9529° N, 0.9547° W (Direct Feed)
         </div>
       </div>
     </aside>
@@ -235,9 +235,9 @@
   <footer>
     <div class="scrollboard">
       <div class="info-section">
-        <div id="sb-airline" class="airline-heading">Awaiting Live Feed...</div>
+        <div id="sb-airline" class="airline-heading">Awaiting Live Lock...</div>
         <div id="sb-type" style="font-size: 0.85rem; color: var(--text-dim);">Type: --</div>
-        <div id="sb-route" style="font-size: 0.85rem; color: var(--text-dim);">Location: Synchronizing transponders...</div>
+        <div id="sb-route" style="font-size: 0.85rem; color: var(--text-dim);">Location: Synchronizing live packets...</div>
       </div>
 
       <div class="metrics-section">
@@ -318,40 +318,28 @@
     }
 
     async function fetchLiveFlights() {
-      const targetUrl = `https://api.airplanes.live/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`;
-      const proxyUrl = `https://api.cors.lol/?url=${encodeURIComponent(targetUrl)}`;
+      // Direct live query to ADSB.lol network feed (supports CORS natively)
+      const url = `https://api.adsb.lol/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`;
 
       try {
-        const response = await fetch(proxyUrl);
-        if (!response.ok) throw new Error(`Network response error: ${response.status}`);
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         const data = await response.json();
         
         if (data && data.ac) {
           liveAircraft = data.ac;
-          document.getElementById('connection-status').innerText = `Status: Live Online (${liveAircraft.length} targets)`;
+          document.getElementById('connection-status').innerText = `Live Connected (${liveAircraft.length} targets)`;
           document.getElementById('connection-status').style.color = '#10b981';
           renderFlightBoard(liveAircraft);
           updateNearestScrollboard(liveAircraft);
         } else {
-          document.getElementById('connection-status').innerText = `Status: Live Feed Active (0 targets in range)`;
+          liveAircraft = [];
+          document.getElementById('connection-status').innerText = `Live Feed Active (0 targets in range)`;
         }
       } catch (err) {
-        console.warn("Primary live proxy error, trying backup route...", err);
-        try {
-          const backupUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
-          const res2 = await fetch(backupUrl);
-          const data2 = await res2.json();
-          if (data2 && data2.ac) {
-            liveAircraft = data2.ac;
-            document.getElementById('connection-status').innerText = `Status: Live Online (Backup Stream - ${liveAircraft.length} targets)`;
-            renderFlightBoard(liveAircraft);
-            updateNearestScrollboard(liveAircraft);
-            return;
-          }
-        } catch (e2) {
-          document.getElementById('connection-status').innerText = `Status: Stream Offline (Retrying...)`;
-          document.getElementById('connection-status').style.color = '#ef4444';
-        }
+        console.warn("ADSB feed fetch issue:", err);
+        document.getElementById('connection-status').innerText = `Feed Reconnecting...`;
+        document.getElementById('connection-status').style.color = '#ef4444';
       }
     }
 
@@ -361,7 +349,7 @@
       gridEl.innerHTML = '';
 
       if (!acList || acList.length === 0) {
-        gridEl.innerHTML = '<div style="color:var(--text-dim); font-size:0.85rem; padding: 1rem; text-align:center;">No active aircraft within 50 NM.</div>';
+        gridEl.innerHTML = '<div style="color:var(--text-dim); font-size:0.85rem; padding: 1rem; text-align:center;">No active transponders within 50 NM.</div>';
         return;
       }
 
@@ -399,8 +387,8 @@
       document.getElementById('sb-alt').innerText = `Alt: ${nearest.alt_baro || 'Ground'} ft`;
       document.getElementById('sb-speed').innerText = `Speed: ${nearest.gs || 0} kts`;
       document.getElementById('sb-airline').innerText = nearest.flight ? nearest.flight.trim() : `ICAO: ${nearest.hex}`;
-      document.getElementById('sb-type').innerText = `Type: ${nearest.t || 'Aircraft'} (Live)`;
-      document.getElementById('sb-route').innerText = `Coordinates: ${nearest.lat.toFixed(3)}°, ${nearest.lon.toFixed(3)}°`;
+      document.getElementById('sb-type').innerText = `Type: ${nearest.t || 'Aircraft'} (Live ADSB)`;
+      document.getElementById('sb-route').innerText = `Position: ${nearest.lat.toFixed(3)}°, ${nearest.lon.toFixed(3)}°`;
     }
 
     function drawRadarScope() {
@@ -433,7 +421,7 @@
 
       ctx.setLineDash([]);
 
-      // Draw live aircraft pips
+      // Draw real live aircraft pips
       liveAircraft.forEach(ac => {
         if (!ac.lat || !ac.lon) return;
         const p = map.latLngToContainerPoint([ac.lat, ac.lon]);
@@ -477,7 +465,7 @@
       
       requestAnimationFrame(drawRadarScope);
       
-      // Initial fetch + refresh every 10 seconds
+      // Pull live data immediately, then update every 10 seconds
       fetchLiveFlights();
       setInterval(fetchLiveFlights, 10000);
     });
