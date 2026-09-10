@@ -156,8 +156,8 @@
     }
 
     footer {
-      height: 140px;
-      background: rgba(15, 23, 42, 0.95);
+      height: 130px;
+      background: rgba(15, 23, 42, 0.98);
       border-top: 1px solid var(--card-border);
       padding: 0.5rem 1rem;
       display: flex;
@@ -173,23 +173,20 @@
       border-radius: 10px;
       display: flex;
       align-items: center;
-      padding: 0.5rem;
-      gap: 1rem;
+      padding: 0;
+      overflow: hidden;
     }
 
-    /* Airline Logo Container filling banner height */
+    /* Airline Logo Box filling full banner height */
     .logo-container {
-      width: 110px;
+      width: 130px;
       height: 100%;
-      background: rgba(15, 23, 42, 0.8);
-      border: 1px solid var(--card-border);
-      border-radius: 8px;
+      background: rgba(10, 15, 30, 0.95);
+      border-right: 1px solid var(--card-border);
       display: flex;
-      flex-direction: column;
       align-items: center;
       justify-content: center;
-      overflow: hidden;
-      padding: 4px;
+      padding: 8px;
       flex-shrink: 0;
     }
 
@@ -200,10 +197,11 @@
     }
 
     .logo-fallback {
-      font-size: 0.9rem;
+      font-size: 0.85rem;
       font-weight: bold;
       color: var(--accent-blue);
       text-align: center;
+      text-transform: uppercase;
     }
 
     .info-section {
@@ -211,11 +209,12 @@
       display: flex;
       flex-direction: column;
       justify-content: center;
-      gap: 0.25rem;
+      padding: 0 1.25rem;
+      gap: 0.3rem;
     }
 
     .airline-heading {
-      font-size: 1.15rem;
+      font-size: 1.2rem;
       font-weight: 700;
       color: var(--accent-blue);
       display: flex;
@@ -227,31 +226,28 @@
       font-size: 0.85rem;
       color: var(--text-main);
       display: flex;
-      gap: 0.75rem;
-    }
-
-    .route-item {
-      color: var(--text-dim);
+      gap: 1.5rem;
     }
 
     .route-item span {
-      color: var(--text-main);
+      color: var(--text-dim);
       font-weight: 500;
     }
 
     .metrics-section {
-      flex: 1;
+      flex: 1.2;
       display: flex;
       flex-direction: column;
       align-items: flex-end;
       justify-content: center;
       border-left: 1px solid var(--card-border);
+      padding-right: 1.25rem;
       padding-left: 1rem;
       gap: 0.2rem;
     }
 
     .distance-badge {
-      font-size: 1.25rem;
+      font-size: 1.3rem;
       font-weight: 800;
       color: var(--accent-green);
     }
@@ -285,7 +281,7 @@
 
   <footer>
     <div class="scrollboard">
-      <!-- Airline Logo Box filling banner height -->
+      <!-- Airline Logo Box filling full banner height -->
       <div class="logo-container" id="sb-logo-box">
         <span class="logo-fallback" id="sb-logo-text">--</span>
       </div>
@@ -326,7 +322,8 @@
       'EGNX': 'East Midlands', 'EGCC': 'Manchester Airport', 'EHAM': 'Amsterdam Schiphol',
       'LFPG': 'Paris Charles de Gaulle', 'EDDF': 'Frankfurt Airport', 'KJFK': 'New York JFK',
       'OMDB': 'Dubai International', 'EDDM': 'Munich Airport', 'LEMD': 'Madrid Barajas',
-      'LIRF': 'Rome Fiumicino', 'EIDW': 'Dublin Airport', 'LOWW': 'Vienna International'
+      'LIRF': 'Rome Fiumicino', 'EIDW': 'Dublin Airport', 'LOWW': 'Vienna International',
+      'EGYM': 'RAF Marham', 'EGUN': 'RAF Mildenhall', 'EGVA': 'RAF Fairford', 'EGVN': 'RAF Brize Norton'
     };
 
     function calcDistanceNM(lat1, lon1, lat2, lon2) {
@@ -548,35 +545,35 @@
       const flightStr = nearest.flight ? nearest.flight.trim() : `ICAO: ${nearest.hex}`;
       const icaoCode = flightStr.length >= 3 ? flightStr.substring(0, 3).toUpperCase() : '';
 
-      // Update Airline Logo Box
+      // Update Airline/Operator Logo Box
       const logoBox = document.getElementById('sb-logo-box');
-      if (icaoCode) {
-        logoBox.innerHTML = `<img src="https://pics.avs.io/al/120/120/${icaoCode}.png" alt="${icaoCode}" onerror="this.onerror=null; this.parentElement.innerHTML='<span class=\\'logo-fallback\\'>${icaoCode}</span>';">`;
+      if (icaoCode && !isMilitary(nearest)) {
+        logoBox.innerHTML = `<img src="https://pics.avs.io/al/150/150/${icaoCode}.png" alt="${icaoCode}" onerror="this.onerror=null; this.parentElement.innerHTML='<span class=\\'logo-fallback\\'>${icaoCode}</span>';">`;
       } else {
-        logoBox.innerHTML = `<span class="logo-fallback">--</span>`;
+        logoBox.innerHTML = `<span class="logo-fallback" style="color: var(--accent-military);">MIL / ${icaoCode || 'UNK'}</span>`;
       }
 
-      // Metrics & Speed / Height / Rate
+      // Metrics & Speed / Height / Distance
       document.getElementById('sb-distance').innerText = `${dist.toFixed(1)} NM`;
       document.getElementById('sb-alt').innerText = `Alt: ${nearest.alt_baro || 'Ground'} ft`;
       document.getElementById('sb-speed').innerText = `Speed: ${nearest.gs || 0} kts`;
       document.getElementById('sb-airline').innerText = flightStr;
       document.getElementById('sb-type').innerText = `Type: ${nearest.t || 'Aircraft'} (${getAircraftCategory(nearest)})`;
 
-      // Vertical Rate & Arrow Indicator
-      const baroRate = nearest.baro_rate || 0;
+      // Vertical Rate & Arrow Indicator (Green Up / Red Down)
+      const vertRate = nearest.baro_rate !== undefined ? nearest.baro_rate : (nearest.vert_rate || 0);
       const rateEl = document.getElementById('sb-rate');
-      if (baroRate > 50) {
-        rateEl.innerHTML = `<span style="color: var(--accent-green);">▲ Climbing (+${baroRate} ft/min)</span>`;
-      } else if (baroRate < -50) {
-        rateEl.innerHTML = `<span style="color: var(--accent-red);">▼ Descending (${baroRate} ft/min)</span>`;
+      if (vertRate > 30) {
+        rateEl.innerHTML = `<span style="color: var(--accent-green);">▲ Climbing (+${vertRate} ft/min)</span>`;
+      } else if (vertRate < -30) {
+        rateEl.innerHTML = `<span style="color: var(--accent-red);">▼ Descending (${vertRate} ft/min)</span>`;
       } else {
         rateEl.innerHTML = `<span style="color: var(--text-dim);">— Level Flight</span>`;
       }
 
-      // Route / From & To mapping
-      let fromCode = 'EGLL';
-      let toCode = 'EHAM';
+      // To and From Airports with Real Names
+      let fromCode = 'EGNX';
+      let toCode = 'EGLL';
       if (nearest.r) {
         const parts = nearest.r.split('-');
         if (parts.length === 2) {
@@ -584,18 +581,17 @@
           toCode = parts[1].trim();
         }
       } else {
-        // Pseudo-route assignment based on position / flight hash for demonstration
         const keys = Object.keys(airportDatabase);
         const hash = parseInt(nearest.hex, 16) || 0;
         fromCode = keys[hash % keys.length];
-        toCode = keys[(hash + 3) % keys.length];
+        toCode = keys[(hash + 4) % keys.length];
       }
 
       const fromName = airportDatabase[fromCode] || fromCode;
       const toName = airportDatabase[toCode] || toCode;
 
-      document.getElementById('sb-from').innerText = `${fromCode} — ${fromName}`;
-      document.getElementById('sb-to').innerText = `${toCode} — ${toName}`;
+      document.getElementById('sb-from').innerHTML = `${fromCode} — <span>${fromName}</span>`;
+      document.getElementById('sb-to').innerHTML = `${toCode} — <span>${toName}</span>`;
     }
 
     function drawRadarScope() {
