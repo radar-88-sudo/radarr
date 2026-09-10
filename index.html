@@ -437,6 +437,25 @@
       document.getElementById('sb-route').innerText = `Position: ${nearest.lat.toFixed(3)}°, ${nearest.lon.toFixed(3)}°`;
     }
 
+    function getAircraftCategory(ac) {
+      const type = (ac.t || '').toUpperCase();
+      const cat = (ac.category || '').toUpperCase();
+
+      if (cat.startsWith('H') || ['R44', 'R22', 'EC35', 'H135', 'H145', 'B06', 'AS35', 'S76'].includes(type)) {
+        return 'HELICOPTER';
+      }
+      if (['B744', 'B748', 'B772', 'B77W', 'B788', 'B789', 'A332', 'A333', 'A359', 'A380'].includes(type) || cat === 'A5' || cat === 'A6') {
+        return 'HEAVY';
+      }
+      if (['AT72', 'AT75', 'DH8D', 'DH8A', 'DH8B', 'DH8C', 'SF34', 'SB20', 'BE20'].includes(type)) {
+        return 'TURBOPROP';
+      }
+      if (['C172', 'C150', 'C182', 'PA28', 'PA34', 'SR20', 'SR22', 'DA40', 'DA42'].includes(type) || cat === 'A1') {
+        return 'LIGHT';
+      }
+      return 'JET'; // Standard Narrowbody Jet
+    }
+
     function drawRadarScope() {
       if (!ctx || !canvas || !map) return;
 
@@ -466,43 +485,105 @@
 
       ctx.setLineDash([]);
 
-      // Draw larger, crisp vector airplane shapes oriented to heading
+      // Draw unique aircraft silhouette shapes based on type/category
       liveAircraft.forEach(ac => {
         if (!ac.lat || !ac.lon) return;
         const p = map.latLngToContainerPoint([ac.lat, ac.lon]);
         const trackAngle = (ac.track || ac.hdg || 0) * (Math.PI / 180);
+        const category = getAircraftCategory(ac);
 
         ctx.save();
         ctx.translate(p.x, p.y);
         ctx.rotate(trackAngle);
 
-        // Scaled-up, detailed aircraft vector silhouette
         ctx.beginPath();
-        ctx.moveTo(0, -14);     // Nose
-        ctx.lineTo(4, -4);     // Right wing front
-        ctx.lineTo(15, 3);     // Right wing tip
-        ctx.lineTo(4, 7);      // Right wing back
-        ctx.lineTo(2.5, 12);   // Right tail
-        ctx.lineTo(5.5, 15);   // Right stabilizer tip
-        ctx.lineTo(1, 13);     // Right stabilizer inner
-        ctx.lineTo(0, 12.5);   // Tail center
-        ctx.lineTo(-1, 13);    // Left stabilizer inner
-        ctx.lineTo(-5.5, 15);  // Left stabilizer tip
-        ctx.lineTo(-2.5, 12);  // Left tail
-        ctx.lineTo(-4, 7);     // Left wing back
-        ctx.lineTo(-15, 3);    // Left wing tip
-        ctx.lineTo(-4, -4);    // Left wing front
-        ctx.closePath();
 
-        ctx.fillStyle = '#10b981';
-        ctx.shadowColor = '#059669';
-        ctx.shadowBlur = 8;
-        ctx.fill();
-        ctx.shadowBlur = 0;
+        if (category === 'HELICOPTER') {
+          // Helicopter rotor / body silhouette
+          ctx.arc(0, 0, 4, 0, Math.PI * 2);
+          ctx.moveTo(0, 4); ctx.lineTo(0, 13);
+          ctx.moveTo(-11, 0); ctx.lineTo(11, 0);
+          ctx.moveTo(0, -11); ctx.lineTo(0, 11);
+        } else if (category === 'HEAVY') {
+          // Widebody / Heavy Jet silhouette
+          ctx.moveTo(0, -18);
+          ctx.lineTo(5, -5);
+          ctx.lineTo(20, 4);
+          ctx.lineTo(6, 9);
+          ctx.lineTo(3, 15);
+          ctx.lineTo(7, 18);
+          ctx.lineTo(1, 16);
+          ctx.lineTo(0, 15);
+          ctx.lineTo(-1, 16);
+          ctx.lineTo(-7, 18);
+          ctx.lineTo(-3, 15);
+          ctx.lineTo(-6, 9);
+          ctx.lineTo(-20, 4);
+          ctx.lineTo(-5, -5);
+          ctx.closePath();
+        } else if (category === 'TURBOPROP') {
+          // Turboprop silhouette (straight wings)
+          ctx.moveTo(0, -13);
+          ctx.lineTo(3, -3);
+          ctx.lineTo(15, 1);
+          ctx.lineTo(3, 4);
+          ctx.lineTo(2, 11);
+          ctx.lineTo(4, 14);
+          ctx.lineTo(0, 12);
+          ctx.lineTo(-4, 14);
+          ctx.lineTo(-2, 11);
+          ctx.lineTo(-3, 4);
+          ctx.lineTo(-15, 1);
+          ctx.lineTo(-3, -3);
+          ctx.closePath();
+        } else if (category === 'LIGHT') {
+          // Light single-engine piston silhouette
+          ctx.moveTo(0, -11);
+          ctx.lineTo(2, -3);
+          ctx.lineTo(13, -1);
+          ctx.lineTo(2, 2);
+          ctx.lineTo(1, 10);
+          ctx.lineTo(3, 12);
+          ctx.lineTo(0, 11);
+          ctx.lineTo(-3, 12);
+          ctx.lineTo(-1, 10);
+          ctx.lineTo(-2, 2);
+          ctx.lineTo(-13, -1);
+          ctx.lineTo(-2, -3);
+          ctx.closePath();
+        } else {
+          // Standard Narrowbody Jet (A320 / B738)
+          ctx.moveTo(0, -14);
+          ctx.lineTo(4, -4);
+          ctx.lineTo(15, 3);
+          ctx.lineTo(4, 7);
+          ctx.lineTo(2.5, 12);
+          ctx.lineTo(5.5, 15);
+          ctx.lineTo(0, 12.5);
+          ctx.lineTo(-5.5, 15);
+          ctx.lineTo(-2.5, 12);
+          ctx.lineTo(-4, 7);
+          ctx.lineTo(-15, 3);
+          ctx.lineTo(-4, -4);
+          ctx.closePath();
+        }
 
-        ctx.strokeStyle = '#022c22';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
+        if (category === 'HELICOPTER') {
+          ctx.strokeStyle = '#10b981';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = category === 'HEAVY' ? '#3b82f6' : '#10b981';
+          ctx.shadowColor = '#059669';
+          ctx.shadowBlur = 8;
+          ctx.fill();
+          ctx.shadowBlur = 0;
+
+          ctx.strokeStyle = '#022c22';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        }
+
         ctx.restore();
 
         // Aircraft callsign label
