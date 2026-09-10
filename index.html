@@ -566,7 +566,7 @@
       if (cat.startsWith('H') || ['R44', 'R22', 'EC35', 'H135', 'H145', 'B06', 'AS35', 'S76', 'AW13', 'A169'].some(s => type.includes(s))) {
         return 'HELICOPTER';
       }
-      if (['F16', 'F15', 'F18', 'EUT', 'TOR', 'HAWK', 'A10', 'C130', 'C17', 'TYPH', 'A400', 'E3TF', 'K35R'].some(s => type.includes(s)) || cat === 'A7') {
+      if (['F16', 'F15', 'F18', 'EUT', 'TOR', 'HAWK', 'A10', 'C130', 'C17', 'TYPH', 'A400', 'E3TF', 'K35R', 'CH47', 'AH64', 'UH60', 'NH90'].some(s => type.includes(s)) || cat === 'A7') {
         return 'FIGHTER_MILITARY';
       }
       if (['GLF', 'CL3', 'CL6', 'LJ', 'FA7', 'PRM', 'E55', 'H25B', 'C56X', 'LJ35', 'BE40'].some(s => type.includes(s)) || cat === 'A4') {
@@ -595,7 +595,7 @@
       const flight = (ac.flight || '').toUpperCase();
       const cat = (ac.category || '').toUpperCase();
 
-      // Explicitly exclude civilian emergency / HEMS / police services (e.g. HLE = UK HEMS, NPAS = Police)
+      // Explicitly exclude civilian emergency / HEMS / police services
       const civilianExclusions = ['HLE', 'NPAS', 'TRA', 'POL', 'AMB'];
       if (civilianExclusions.some(prefix => flight.startsWith(prefix))) {
         return false;
@@ -605,7 +605,8 @@
       if (['F16', 'F15', 'F18', 'F35', 'F22', 'EF20', 'TOR', 'HAWK', 'A10', 'C130', 'C17', 'A400', 'K35R', 'E3TF', 'V22', 'CH47', 'AH64', 'UH60', 'NH90', 'TYPH'].some(s => type.includes(s))) {
         return true;
       }
-      if (['RRR', 'ASCOT', 'RCH', 'DUKE', 'BOOM', 'REACH', 'CNV'].some(prefix => flight.startsWith(prefix))) {
+      // Added 'SHF' and 'VORTEX' for UK Support Helicopter Force callsigns
+      if (['RRR', 'ASCOT', 'SHF', 'VORTEX', 'RCH', 'DUKE', 'BOOM', 'REACH', 'CNV'].some(prefix => flight.startsWith(prefix))) {
         return true;
       }
       return false;
@@ -646,7 +647,7 @@
       const callsign = (flightStr || '').toUpperCase().trim();
       const prefix = callsign.length >= 3 ? callsign.substring(0, 3) : '';
       
-      if (['RRR', 'ASCOT', 'RCH', 'DUKE', 'REACH', 'BOOM'].some(p => callsign.startsWith(p))) {
+      if (['RRR', 'ASCOT', 'SHF', 'VORTEX', 'RCH', 'DUKE', 'REACH', 'BOOM'].some(p => callsign.startsWith(p))) {
         const milBases = ['EGVN', 'EGUN', 'EGYM', 'EGDL', 'EGVA', 'EGNX'];
         const hash = parseInt(ac.hex, 16) || 0;
         const from = milBases[hash % milBases.length];
