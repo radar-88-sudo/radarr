@@ -354,9 +354,11 @@
 
     async function fetchADSBData() {
       const { lat, lon } = userConfig;
+      const proxy = "https://corsproxy.io/?";
 
       try {
-        const res = await fetch(`https://api.airplanes.live/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`);
+        const targetUrl = `https://api.airplanes.live/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
+        const res = await fetch(proxy + encodeURIComponent(targetUrl));
         if (res.status === 429) throw new Error("429 Rate Limit");
         if (res.ok) {
           const data = await res.json();
@@ -365,7 +367,8 @@
       } catch (e) {}
 
       try {
-        const res = await fetch(`https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`);
+        const targetUrl = `https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
+        const res = await fetch(proxy + encodeURIComponent(targetUrl));
         if (res.status === 429) throw new Error("429 Rate Limit");
         if (res.ok) {
           const data = await res.json();
@@ -375,8 +378,8 @@
 
       try {
         const box = 0.8;
-        const url = `https://opensky-network.org/api/states/all?lamin=${(lat-box).toFixed(2)}&lamax=${(lat+box).toFixed(2)}&lomin=${(lon-box).toFixed(2)}&lomax=${(lon+box).toFixed(2)}`;
-        const res = await fetch(url);
+        const targetUrl = `https://opensky-network.org/api/states/all?lamin=${(lat-box).toFixed(2)}&lamax=${(lat+box).toFixed(2)}&lomin=${(lon-box).toFixed(2)}&lomax=${(lon+box).toFixed(2)}`;
+        const res = await fetch(proxy + encodeURIComponent(targetUrl));
         if (res.ok) {
           const data = await res.json();
           if (data && data.states) {
