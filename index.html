@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>GitHub Pages Airspace Scope</title>
+  <title>Live Online Airspace Scope</title>
   
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
@@ -209,8 +209,8 @@
 <body>
 
   <header>
-    <h1><span class="pulse-dot"></span> Airspace Scope (50 NM) - GitHub Host</h1>
-    <div id="connection-status" style="font-size: 0.85rem; color: var(--accent-green);">Status: Radar Active (Simulation Feed)</div>
+    <h1><span class="pulse-dot"></span> Live Airspace Scope (50 NM Radius)</h1>
+    <div id="connection-status" style="font-size: 0.85rem; color: var(--accent-blue);">Status: Connecting to Live API...</div>
   </header>
 
   <main>
@@ -221,12 +221,12 @@
 
     <aside class="sidebar">
       <div class="panel">
-        <div class="panel-title">Military Flights (50 NM Radius)</div>
+        <div class="panel-title">Active Live Targets</div>
         <div id="aircraft-grid" class="aircraft-grid">
-          <!-- Populated dynamically -->
+          <div style="color:var(--text-dim); font-size:0.85rem; padding: 1rem; text-align:center;">Scanning radio frequency...</div>
         </div>
         <div id="status-bar" style="font-size:0.7rem; color:var(--text-dim); margin-top:0.5rem;">
-          Station: 52.9529° N, 0.9547° W (RAF Waddington Sector)
+          Station: 52.9529° N, 0.9547° W (Live Feed)
         </div>
       </div>
     </aside>
@@ -235,9 +235,9 @@
   <footer>
     <div class="scrollboard">
       <div class="info-section">
-        <div id="sb-airline" class="airline-heading">Initializing Target...</div>
+        <div id="sb-airline" class="airline-heading">Awaiting Live Feed...</div>
         <div id="sb-type" style="font-size: 0.85rem; color: var(--text-dim);">Type: --</div>
-        <div id="sb-route" style="font-size: 0.85rem; color: var(--text-dim);">Location: Directing scope...</div>
+        <div id="sb-route" style="font-size: 0.85rem; color: var(--text-dim);">Location: Synchronizing transponders...</div>
       </div>
 
       <div class="metrics-section">
@@ -256,14 +256,7 @@
     let canvas = null;
     let ctx = null;
     let sweepAngle = 0;
-
-    // Simulated active military flights around RAF Waddington
-    let simulatedAircraft = [
-      { hex: '43c121', flight: 'RRR721', t: 'A332', alt_baro: 24500, gs: 420, lat: 53.15, lon: -0.75, dLat: 0.0003, dLon: 0.0004 },
-      { hex: 'ae5672', flight: 'ASCOT41', t: 'C17', alt_baro: 18200, gs: 340, lat: 52.75, lon: -1.25, dLat: -0.0002, dLon: 0.0003 },
-      { hex: '3e89ac', flight: 'SHADOW1', t: 'BE20', alt_baro: 12000, gs: 260, lat: 53.05, lon: -1.15, dLat: 0.0004, dLon: -0.0002 },
-      { hex: '43c999', flight: 'REACH84', t: 'KC135', alt_baro: 28000, gs: 450, lat: 52.65, lon: -0.65, dLat: -0.0003, dLon: -0.0003 }
-    ];
+    let liveAircraft = [];
 
     function calcDistanceNM(lat1, lon1, lat2, lon2) {
       const R = 3440.065;
@@ -324,17 +317,42 @@
       if (map) map.invalidateSize();
     }
 
-    function updateSimulation() {
-      simulatedAircraft.forEach(ac => {
-        ac.lat += ac.dLat;
-        ac.lon += ac.dLon;
-        // Bounce back if drifting too far from station
-        if (Math.abs(ac.lat - userConfig.lat) > 0.6) ac.dLat *= -1;
-        if (Math.abs(ac.lon - userConfig.lon) > 0.8) ac.dLon *= -1;
-      });
+    async function fetchLiveFlights() {
+      const targetUrl = `https://api.airplanes.live/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`;
+      const proxyUrl = `https://api.cors.lol/?url=${encodeURIComponent(targetUrl)}`;
 
-      renderFlightBoard(simulatedAircraft);
-      updateNearestScrollboard(simulatedAircraft);
+      try {
+        const response = await fetch(proxyUrl);
+        if (!response.ok) throw new Error(`Network response error: ${response.status}`);
+        const data = await response.json();
+        
+        if (data && data.ac) {
+          liveAircraft = data.ac;
+          document.getElementById('connection-status').innerText = `Status: Live Online (${liveAircraft.length} targets)`;
+          document.getElementById('connection-status').style.color = '#10b981';
+          renderFlightBoard(liveAircraft);
+          updateNearestScrollboard(liveAircraft);
+        } else {
+          document.getElementById('connection-status').innerText = `Status: Live Feed Active (0 targets in range)`;
+        }
+      } catch (err) {
+        console.warn("Primary live proxy error, trying backup route...", err);
+        try {
+          const backupUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+          const res2 = await fetch(backupUrl);
+          const data2 = await res2.json();
+          if (data2 && data2.ac) {
+            liveAircraft = data2.ac;
+            document.getElementById('connection-status').innerText = `Status: Live Online (Backup Stream - ${liveAircraft.length} targets)`;
+            renderFlightBoard(liveAircraft);
+            updateNearestScrollboard(liveAircraft);
+            return;
+          }
+        } catch (e2) {
+          document.getElementById('connection-status').innerText = `Status: Stream Offline (Retrying...)`;
+          document.getElementById('connection-status').style.color = '#ef4444';
+        }
+      }
     }
 
     function renderFlightBoard(acList) {
@@ -342,18 +360,24 @@
       if (!gridEl) return;
       gridEl.innerHTML = '';
 
+      if (!acList || acList.length === 0) {
+        gridEl.innerHTML = '<div style="color:var(--text-dim); font-size:0.85rem; padding: 1rem; text-align:center;">No active aircraft within 50 NM.</div>';
+        return;
+      }
+
       acList.forEach(ac => {
+        if (!ac.lat || !ac.lon) return;
         const dist = calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon);
         const card = document.createElement('div');
         card.className = 'ac-card';
         card.innerHTML = `
           <div>
-            <div style="font-weight:bold; font-size:0.95rem; color:#f8fafc;">${ac.flight}</div>
-            <div style="font-size:0.75rem; color:var(--text-dim);">${ac.t} • ${ac.gs} kts</div>
+            <div style="font-weight:bold; font-size:0.95rem; color:#f8fafc;">${ac.flight ? ac.flight.trim() : ac.hex}</div>
+            <div style="font-size:0.75rem; color:var(--text-dim);">${ac.t || 'Unknown'} • ${ac.gs || 0} kts</div>
           </div>
           <div style="text-align:right;">
             <div style="font-weight:bold; color:var(--accent-green);">${dist.toFixed(1)} NM</div>
-            <div style="font-size:0.75rem; color:var(--text-dim);">${ac.alt_baro} ft</div>
+            <div style="font-size:0.75rem; color:var(--text-dim);">${ac.alt_baro || 'Ground'} ft</div>
           </div>
         `;
         gridEl.appendChild(card);
@@ -361,19 +385,22 @@
     }
 
     function updateNearestScrollboard(acList) {
-      if (acList.length === 0) return;
-      let nearest = [...acList].sort((a, b) => 
+      if (!acList || acList.length === 0) return;
+      const validAc = acList.filter(a => a.lat && a.lon);
+      if (validAc.length === 0) return;
+
+      let nearest = [...validAc].sort((a, b) => 
         calcDistanceNM(userConfig.lat, userConfig.lon, a.lat, a.lon) - 
         calcDistanceNM(userConfig.lat, userConfig.lon, b.lat, b.lon)
       )[0];
 
       const dist = calcDistanceNM(userConfig.lat, userConfig.lon, nearest.lat, nearest.lon);
       document.getElementById('sb-distance').innerText = `${dist.toFixed(1)} NM`;
-      document.getElementById('sb-alt').innerText = `Alt: ${nearest.alt_baro} ft`;
-      document.getElementById('sb-speed').innerText = `Speed: ${nearest.gs} kts`;
-      document.getElementById('sb-airline').innerText = nearest.flight;
-      document.getElementById('sb-type').innerText = `Type: ${nearest.t} (Military)`;
-      document.getElementById('sb-route').innerText = `Target Lat/Lon: ${nearest.lat.toFixed(2)}°, ${nearest.lon.toFixed(2)}°`;
+      document.getElementById('sb-alt').innerText = `Alt: ${nearest.alt_baro || 'Ground'} ft`;
+      document.getElementById('sb-speed').innerText = `Speed: ${nearest.gs || 0} kts`;
+      document.getElementById('sb-airline').innerText = nearest.flight ? nearest.flight.trim() : `ICAO: ${nearest.hex}`;
+      document.getElementById('sb-type').innerText = `Type: ${nearest.t || 'Aircraft'} (Live)`;
+      document.getElementById('sb-route').innerText = `Coordinates: ${nearest.lat.toFixed(3)}°, ${nearest.lon.toFixed(3)}°`;
     }
 
     function drawRadarScope() {
@@ -406,8 +433,9 @@
 
       ctx.setLineDash([]);
 
-      // Draw aircraft pips on canvas
-      simulatedAircraft.forEach(ac => {
+      // Draw live aircraft pips
+      liveAircraft.forEach(ac => {
+        if (!ac.lat || !ac.lon) return;
         const p = map.latLngToContainerPoint([ac.lat, ac.lon]);
 
         ctx.beginPath();
@@ -420,7 +448,7 @@
 
         ctx.font = 'bold 11px monospace';
         ctx.fillStyle = '#ffffff';
-        ctx.fillText(ac.flight, p.x + 8, p.y + 4);
+        ctx.fillText(ac.flight ? ac.flight.trim() : ac.hex, p.x + 8, p.y + 4);
       });
 
       // Radar sweep line
@@ -448,8 +476,10 @@
       window.addEventListener('resize', resizeCanvas);
       
       requestAnimationFrame(drawRadarScope);
-      setInterval(updateSimulation, 1000);
-      updateSimulation();
+      
+      // Initial fetch + refresh every 10 seconds
+      fetchLiveFlights();
+      setInterval(fetchLiveFlights, 10000);
     });
   </script>
 </body>
