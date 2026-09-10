@@ -177,7 +177,7 @@
       overflow: hidden;
     }
 
-    /* Airline Logo Box filling full banner height */
+    /* Media/Photo Box filling full banner height */
     .logo-container {
       width: 130px;
       height: 100%;
@@ -186,22 +186,24 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 8px;
+      padding: 0px;
       flex-shrink: 0;
+      overflow: hidden;
     }
 
     .logo-container img {
-      max-width: 100%;
-      max-height: 100%;
-      object-fit: contain;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
     }
 
     .logo-fallback {
-      font-size: 0.85rem;
+      font-size: 0.8rem;
       font-weight: bold;
       color: var(--accent-blue);
       text-align: center;
       text-transform: uppercase;
+      padding: 4px;
     }
 
     .info-section {
@@ -281,7 +283,7 @@
 
   <footer>
     <div class="scrollboard">
-      <!-- Airline Logo Box filling full banner height -->
+      <!-- Media/Photo Box filling full banner height -->
       <div class="logo-container" id="sb-logo-box">
         <span class="logo-fallback" id="sb-logo-text">--</span>
       </div>
@@ -334,6 +336,37 @@
                 Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
                 Math.sin(dLon / 2) * Math.sin(dLon / 2);
       return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    // Function to fetch real aircraft photo from Planespotters.net API with fallbacks
+    async function fetchAircraftPhoto(hexCode, icaoCode, isMil) {
+      const logoBox = document.getElementById('sb-logo-box');
+      
+      if (isMil) {
+        logoBox.innerHTML = `<span class="logo-fallback" style="color: var(--accent-military);">MILITARY</span>`;
+        return;
+      }
+
+      try {
+        const response = await fetch(`https://api.planespotters.net/pub/photos/hex/${hexCode}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.photos && data.photos.length > 0) {
+            const photoUrl = data.photos[0].thumbnail_large.src;
+            logoBox.innerHTML = `<img src="${photoUrl}" alt="Aircraft Photo" title="Photo via Planespotters.net">`;
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Could not fetch real aircraft photo:', err);
+      }
+      
+      // Fallback to airline code logo if no photo is found
+      if (icaoCode) {
+        logoBox.innerHTML = `<img src="https://pics.avs.io/al/150/150/${icaoCode}.png" alt="${icaoCode}" onerror="this.onerror=null; this.parentElement.innerHTML='<span class=\\'logo-fallback\\'>${icaoCode}</span>';">`;
+      } else {
+        logoBox.innerHTML = `<span class="logo-fallback">NO PHOTO</span>`;
+      }
     }
 
     function initMap() {
@@ -545,13 +578,8 @@
       const flightStr = nearest.flight ? nearest.flight.trim() : `ICAO: ${nearest.hex}`;
       const icaoCode = flightStr.length >= 3 ? flightStr.substring(0, 3).toUpperCase() : '';
 
-      // Update Airline/Operator Logo Box
-      const logoBox = document.getElementById('sb-logo-box');
-      if (icaoCode && !isMilitary(nearest)) {
-        logoBox.innerHTML = `<img src="https://pics.avs.io/al/150/150/${icaoCode}.png" alt="${icaoCode}" onerror="this.onerror=null; this.parentElement.innerHTML='<span class=\\'logo-fallback\\'>${icaoCode}</span>';">`;
-      } else {
-        logoBox.innerHTML = `<span class="logo-fallback" style="color: var(--accent-military);">MIL / ${icaoCode || 'UNK'}</span>`;
-      }
+      // Trigger the real-world aircraft photo lookup
+      fetchAircraftPhoto(nearest.hex, icaoCode, isMilitary(nearest));
 
       // Metrics & Speed / Height / Distance
       document.getElementById('sb-distance').innerText = `${dist.toFixed(1)} NM`;
@@ -560,7 +588,7 @@
       document.getElementById('sb-airline').innerText = flightStr;
       document.getElementById('sb-type').innerText = `Type: ${nearest.t || 'Aircraft'} (${getAircraftCategory(nearest)})`;
 
-      // Vertical Rate & Arrow Indicator (Green Up / Red Down)
+      // Vertical Rate & Arrow Indicator
       const vertRate = nearest.baro_rate !== undefined ? nearest.baro_rate : (nearest.vert_rate || 0);
       const rateEl = document.getElementById('sb-rate');
       if (vertRate > 30) {
