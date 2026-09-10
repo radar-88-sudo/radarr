@@ -303,7 +303,7 @@
         keyboard: false
       }).setView([userConfig.lat, userConfig.lon], 8);
 
-      // Using Esri Dark Gray (Free, no API key needed, no CARTO key errors)
+      // Esri Dark Gray Base Map (Free, no API key required)
       L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
         maxZoom: 16
       }).addTo(map);
@@ -342,40 +342,32 @@
       }
     }
 
-    // Direct JSONP call: Completely circumvents CORS and proxy errors
-    function fetchADSBData() {
-      return new Promise((resolve) => {
-        const callbackName = 'adsb_cb_' + Math.floor(Math.random() * 1000000);
-        const script = document.createElement('script');
-        
-        const timeout = setTimeout(() => {
-          cleanup();
-          resolve(null);
-        }, 8000);
+    // Direct native fetch using lat/lon endpoint with fallback to adsb.fi
+    async function fetchADSBData() {
+      const lat = userConfig.lat;
+      const lon = userConfig.lon;
+      
+      // Endpoints directly supporting native CORS without query parameters
+      const urls = [
+        `https://api.adsb.lol/v2/lat/${lat}/lon/${lon}/dist/50`,
+        `https://api.adsb.fi/v2/lat/${lat}/lon/${lon}/dist/50`
+      ];
 
-        function cleanup() {
-          clearTimeout(timeout);
-          delete window[callbackName];
-          if (script.parentNode) script.parentNode.removeChild(script);
-        }
-
-        window[callbackName] = function(data) {
-          cleanup();
-          if (data && data.ac) {
-            resolve({ acList: data.ac, source: 'ADSB.lol' });
-          } else {
-            resolve(null);
+      for (const url of urls) {
+        try {
+          const res = await fetch(url);
+          if (res.ok) {
+            const data = await res.json();
+            if (data && (data.ac || data.aircraft)) {
+              return { acList: data.ac || data.aircraft, source: url.includes('lol') ? 'ADSB.lol' : 'ADSB.fi' };
+            }
           }
-        };
+        } catch (e) {
+          console.warn(`Fetch failed for ${url}:`, e);
+        }
+      }
 
-        script.src = `https://api.adsb.lol/v2/point/${userConfig.lat.toFixed(4)}/${userConfig.lon.toFixed(4)}/50?callback=${callbackName}`;
-        script.onerror = () => {
-          cleanup();
-          resolve(null);
-        };
-
-        document.head.appendChild(script);
-      });
+      return null;
     }
 
     async function pollADSB() {
