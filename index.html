@@ -16,6 +16,7 @@
       --text-dim: #94a3b8;
       --accent-green: #10b981;
       --accent-blue: #3b82f6;
+      --accent-military: #f97316;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -209,8 +210,8 @@
 <body>
 
   <header>
-    <h1><span class="pulse-dot"></span> Live ADSB Radar Scope (v2.5 Vector Engine)</h1>
-    <div id="connection-status" style="font-size: 0.85rem; color: var(--accent-blue);">Initializing Vector Engine...</div>
+    <h1><span class="pulse-dot"></span> Live ADSB Radar Scope (All Targets / Mil Sidebar)</h1>
+    <div id="connection-status" style="font-size: 0.85rem; color: var(--accent-blue);">Initializing Feed...</div>
   </header>
 
   <main>
@@ -221,7 +222,7 @@
 
     <aside class="sidebar">
       <div class="panel">
-        <div class="panel-title">Active Transponders & Silhouette Types</div>
+        <div class="panel-title" style="color: var(--accent-military);">Active Military Transponders</div>
         <div id="aircraft-grid" class="aircraft-grid">
           <div style="color:var(--text-dim); font-size:0.85rem; padding: 1rem; text-align:center;">Scanning sector...</div>
         </div>
@@ -396,7 +397,7 @@
       if (cat.startsWith('H') || ['R44', 'R22', 'EC35', 'H135', 'H145', 'B06', 'AS35', 'S76', 'AW13'].some(s => type.includes(s))) {
         return 'HELICOPTER';
       }
-      if (['F16', 'F15', 'F18', 'EUT', 'TOR', 'HAWK', 'A10', 'C130', 'C17', 'TYPH'].some(s => type.includes(s)) || cat === 'A7') {
+      if (['F16', 'F15', 'F18', 'EUT', 'TOR', 'HAWK', 'A10', 'C130', 'C17', 'TYPH', 'A400', 'E3TF', 'K35R'].some(s => type.includes(s)) || cat === 'A7') {
         return 'FIGHTER_MILITARY';
       }
       if (['GLF', 'CL3', 'CL6', 'LJ', 'FA7', 'PRM', 'E55', 'H25B', 'C56X', 'LJ35', 'BE40'].some(s => type.includes(s)) || cat === 'A4') {
@@ -420,26 +421,43 @@
       return 'NARROWBODY';
     }
 
+    function isMilitary(ac) {
+      const type = (ac.t || '').toUpperCase();
+      const flight = (ac.flight || '').toUpperCase();
+      const cat = (ac.category || '').toUpperCase();
+
+      if (cat === 'A7') return true;
+      if (['F16', 'F15', 'F18', 'F35', 'F22', 'EF20', 'TOR', 'HAWK', 'A10', 'C130', 'C17', 'A400', 'K35R', 'E3TF', 'V22', 'CH47', 'AH64', 'UH60', 'NH90', 'TYPH'].some(s => type.includes(s))) {
+        return true;
+      }
+      if (['RRR', 'ASCOT', 'RCH', 'DUKE', 'BOOM', 'REACH', 'CNV'].some(prefix => flight.startsWith(prefix))) {
+        return true;
+      }
+      return false;
+    }
+
     function renderFlightBoard(acList) {
       const gridEl = document.getElementById('aircraft-grid');
       if (!gridEl) return;
       gridEl.innerHTML = '';
 
-      if (!acList || acList.length === 0) {
-        gridEl.innerHTML = '<div style="color:var(--text-dim); font-size:0.85rem; padding: 1rem; text-align:center;">No active transponders within 50 NM.</div>';
+      // Filter to show ONLY military aircraft in the sidebar
+      const militaryList = acList.filter(ac => isMilitary(ac));
+
+      if (!militaryList || militaryList.length === 0) {
+        gridEl.innerHTML = '<div style="color:var(--text-dim); font-size:0.85rem; padding: 1rem; text-align:center;">No active military transponders within 50 NM.</div>';
         return;
       }
 
-      acList.forEach(ac => {
+      militaryList.forEach(ac => {
         if (!ac.lat || !ac.lon) return;
         const dist = calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon);
-        const cat = getAircraftCategory(ac);
         const card = document.createElement('div');
         card.className = 'ac-card';
         card.innerHTML = `
           <div>
-            <div style="font-weight:bold; font-size:0.95rem; color:#f8fafc;">${ac.flight ? ac.flight.trim() : ac.hex}</div>
-            <div style="font-size:0.72rem; color:var(--accent-blue);">[${ac.t || 'UNK'}] • ${cat}</div>
+            <div style="font-weight:bold; font-size:0.95rem; color:#f97316;">${ac.flight ? ac.flight.trim() : ac.hex}</div>
+            <div style="font-size:0.72rem; color:var(--text-dim);">[${ac.t || 'MIL'}] • ${ac.gs || 0} kts</div>
           </div>
           <div style="text-align:right;">
             <div style="font-weight:bold; color:var(--accent-green);">${dist.toFixed(1)} NM</div>
@@ -498,6 +516,7 @@
 
       ctx.setLineDash([]);
 
+      // Renders ALL aircraft on the radar scope map
       liveAircraft.forEach(ac => {
         if (!ac.lat || !ac.lon) return;
         const p = map.latLngToContainerPoint([ac.lat, ac.lon]);
@@ -547,7 +566,6 @@
           ctx.closePath();
         } 
         else {
-          // Distinct modern airliner contour
           ctx.moveTo(0, -16); ctx.lineTo(3.5, -4); ctx.lineTo(15, 3); ctx.lineTo(5, 9);
           ctx.lineTo(2.5, 14); ctx.lineTo(5.5, 17); ctx.lineTo(0, 15); ctx.lineTo(-5.5, 17);
           ctx.lineTo(-2.5, 14); ctx.lineTo(-5, 9); ctx.lineTo(-15, 3); ctx.lineTo(-3.5, -4);
