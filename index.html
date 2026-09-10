@@ -744,10 +744,50 @@
       document.getElementById('sb-to').innerHTML = `<b>${route.toCode}</b> — <span style="color:var(--text-dim);">${airportDatabase[route.toCode] || 'Aerodrome'}</span>`;
     }
 
+    let sweepAngle = 0;
+
     function drawRadarScope() {
       if (!ctx || !canvas || !map) return;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+      const centerPt = map.latLngToContainerPoint([userConfig.lat, userConfig.lon]);
+
+      // Calculate pixel radius for userConfig.radiusNM (50 NM)
+      const edgeLat = userConfig.lat + (userConfig.radiusNM / 60);
+      const edgePt = map.latLngToContainerPoint([edgeLat, userConfig.lon]);
+      const maxRadiusPx = Math.abs(edgePt.y - centerPt.y);
+
+      // Draw concentric distance rings
+      ctx.strokeStyle = 'rgba(16, 185, 129, 0.2)';
+      ctx.lineWidth = 1;
+      [0.25, 0.5, 0.75, 1.0].forEach(factor => {
+        ctx.beginPath();
+        ctx.arc(centerPt.x, centerPt.y, maxRadiusPx * factor, 0, 2 * Math.PI);
+        ctx.stroke();
+      });
+
+      // Draw crosshairs
+      ctx.beginPath();
+      ctx.moveTo(centerPt.x - maxRadiusPx, centerPt.y);
+      ctx.lineTo(centerPt.x + maxRadiusPx, centerPt.y);
+      ctx.moveTo(centerPt.x, centerPt.y - maxRadiusPx);
+      ctx.lineTo(centerPt.x, centerPt.y + maxRadiusPx);
+      ctx.strokeStyle = 'rgba(16, 185, 129, 0.15)';
+      ctx.stroke();
+
+      // Draw rotating radar sweep line
+      sweepAngle += 0.015;
+      const sweepX = centerPt.x + Math.cos(sweepAngle) * maxRadiusPx;
+      const sweepY = centerPt.y + Math.sin(sweepAngle) * maxRadiusPx;
+
+      ctx.beginPath();
+      ctx.moveTo(centerPt.x, centerPt.y);
+      ctx.lineTo(sweepX, sweepY);
+      ctx.strokeStyle = '#10b981';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Render aircraft targets
       if (liveAircraft && liveAircraft.length > 0) {
         liveAircraft.forEach(ac => {
           if (!ac.lat || !ac.lon) return;
@@ -755,21 +795,47 @@
           const pt = map.latLngToContainerPoint([ac.lat, ac.lon]);
           const isMil = isMilitary(ac);
           const isEmg = ac.squawk === '7500' || ac.squawk === '7600' || ac.squawk === '7700';
+          const isLocked = lockedAircraft && lockedAircraft.hex === ac.hex;
+
+          // Draw pulsing red lock-on ring around the selected aircraft
+          if (isLocked) {
+            const pulseRadius = 12 + Math.sin(Date.now() / 150) * 4;
+            ctx.beginPath();
+            ctx.arc(pt.x, pt.y, pulseRadius, 0, 2 * Math.PI);
+            ctx.strokeStyle = '#ef4444';
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+          }
+
+          // Draw heading vector line
+          if (ac.track !== undefined) {
+            const trackRad = (ac.track - 90) * (Math.PI / 180);
+            const lineLen = 18;
+            const endX = pt.x + Math.cos(trackRad) * lineLen;
+            const endY = pt.y + Math.sin(trackRad) * lineLen;
+            ctx.beginPath();
+            ctx.moveTo(pt.x, pt.y);
+            ctx.lineTo(endX, endY);
+            ctx.strokeStyle = isMil ? '#ff007f' : '#3b82f6';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+          }
 
           // Draw target blip
           ctx.beginPath();
-          ctx.arc(pt.x, pt.y, isMil || isEmg ? 6 : 4, 0, 2 * Math.PI);
+          ctx.arc(pt.x, pt.y, isMil || isEmg ? 5 : 3.5, 0, 2 * Math.PI);
           ctx.fillStyle = isEmg ? '#ef4444' : (isMil ? '#ff007f' : '#3b82f6');
           ctx.fill();
           ctx.lineWidth = 1.5;
           ctx.strokeStyle = '#ffffff';
           ctx.stroke();
 
-          // Draw target callsign/label
+          // Draw target label
           ctx.fillStyle = '#f8fafc';
-          ctx.font = 'bold 11px system-ui';
+          ctx.font = 'bold 10px system-ui';
           const label = ac.flight ? ac.flight.trim() : ac.hex;
-          ctx.fillText(label, pt.x + 8, pt.y + 4);
+          const altText = ac.alt_baro ? ` FL${Math.round(ac.alt_baro / 100)}` : '';
+          ctx.fillText(`${label}${altText}`, pt.x + 8, pt.y + 4);
         });
       }
 
