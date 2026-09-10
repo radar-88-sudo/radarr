@@ -296,7 +296,14 @@
 
     function fitRadarBounds() {
       if (map && scopeCircle) {
-        map.fitBounds(scopeCircle.getBounds(), { padding: [2, 2], animate: false });
+        try {
+          const bounds = scopeCircle.getBounds();
+          if (bounds && bounds.isValid()) {
+            map.fitBounds(bounds, { padding: [2, 2], animate: false });
+          }
+        } catch (e) {
+          console.warn("Bounds fit deferred until map ready.");
+        }
       }
     }
 
@@ -309,9 +316,8 @@
         doubleClickZoom: false,
         boxZoom: false,
         keyboard: false
-      });
+      }).setView([userConfig.lat, userConfig.lon], 8);
 
-      // Simple dark vector tile style (no labels, clean minimalism)
       L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
         maxZoom: 19,
         subdomains: 'abcd'
@@ -337,7 +343,9 @@
         radius: radiusMeters + 1200
       }).addTo(map);
 
-      fitRadarBounds();
+      map.whenReady(() => {
+        fitRadarBounds();
+      });
     }
 
     function resizeCanvas() {
