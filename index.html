@@ -262,7 +262,7 @@
     let canvas = null;
     let ctx = null;
     let sweepAngle = 0;
-    let nextPollDelayMs = 20000;
+    let nextPollDelayMs = 15000;
 
     function calcDistanceNM(lat1, lon1, lat2, lon2) {
       const R = 3440.065;
@@ -306,7 +306,7 @@
         doubleClickZoom: false,
         boxZoom: false,
         keyboard: false
-      }).setView([userConfig.lat, userConfig.lon], 8);
+      }).setView([userConfig.lat, userConfig.lon], 9);
 
       L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19
@@ -314,7 +314,7 @@
 
       const radiusMeters = userConfig.radiusNM * 1852;
       
-      const circle = L.circle([userConfig.lat, userConfig.lon], {
+      L.circle([userConfig.lat, userConfig.lon], {
         color: '#00ff9d',
         weight: 5,
         opacity: 1.0,
@@ -331,8 +331,6 @@
         fill: false,
         radius: radiusMeters + 1200
       }).addTo(map);
-
-      map.fitBounds(circle.getBounds(), { padding: [0, 0] });
     }
 
     function resizeCanvas() {
@@ -345,57 +343,48 @@
 
       if (map) {
         map.invalidateSize();
+        map.setView([userConfig.lat, userConfig.lon], 9);
       }
     }
 
-    async function fetchWithProxy(targetUrl) {
-      const proxies = [
-        url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-        url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
-      ];
+    function fetchJSONP(url) {
+      return new Promise((resolve, reject) => {
+        const callbackName = 'jsonp_cb_' + Math.round(100000 * Math.random());
+        const script = document.createElement('script');
+        
+        window[callbackName] = function(data) {
+          delete window[callbackName];
+          document.body.removeChild(script);
+          resolve(data);
+        };
 
-      for (const getProxyUrl of proxies) {
-        try {
-          const res = await fetch(getProxyUrl(targetUrl));
-          if (res.ok) {
-            const data = await res.json();
-            if (data) return data;
-          }
-        } catch (e) {}
-      }
-      return null;
+        script.onerror = function() {
+          delete window[callbackName];
+          if (script.parentNode) document.body.removeChild(script);
+          reject(new Error('JSONP Request Failed'));
+        };
+
+        const hasParams = url.includes('?');
+        script.src = url + (hasParams ? '&' : '?') + 'callback=' + callbackName;
+        document.body.appendChild(script);
+      });
     }
 
     async function fetchADSBData() {
       const { lat, lon } = userConfig;
 
       try {
-        const url = `https://api.airplanes.live/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
-        const data = await fetchWithProxy(url);
-        if (data && data.ac) return { acList: data.ac, source: 'Airplanes.live' };
+        const data = await fetchJSONP(`https://api.adsb.fi/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`);
+        if (data && data.ac) return { acList: data.ac, source: 'ADSB.fi' };
       } catch (e) {}
 
       try {
-        const url = `https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
-        const data = await fetchWithProxy(url);
-        if (data && data.ac) return { acList: data.ac, source: 'ADSB.lol' };
-      } catch (e) {}
-
-      try {
-        const box = 0.8;
-        const url = `https://opensky-network.org/api/states/all?lamin=${(lat-box).toFixed(2)}&lamax=${(lat+box).toFixed(2)}&lomin=${(lon-box).toFixed(2)}&lomax=${(lon+box).toFixed(2)}`;
-        const data = await fetchWithProxy(url);
-        if (data && data.states) {
-          const parsed = data.states.map(s => ({
-            hex: s[0],
-            flight: s[1] ? s[1].trim() : s[0].toUpperCase(),
-            lon: s[5],
-            lat: s[6],
-            alt_baro: Math.round((s[7] || 0) * 3.28084),
-            gs: Math.round((s[9] || 0) * 1.94384),
-            t: 'Commercial'
-          })).filter(ac => ac.lat !== null && ac.lon !== null);
-          return { acList: parsed, source: 'OpenSky Network' };
+        const proxy = "https://api.allorigins.win/raw?url=";
+        const targetUrl = `https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
+        const res = await fetch(proxy + encodeURIComponent(targetUrl));
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.ac) return { acList: data.ac, source: 'ADSB.lol' };
         }
       } catch (e) {}
 
@@ -409,13 +398,13 @@
 
       const result = await fetchADSBData();
 
-      if (result && result.acList.length > 0) {
-        nextPollDelayMs = 20000;
+      if (result && result.acList) {
+        nextPollDelayMs = 15000;
         activeAircraft = result.acList;
         if (statusEl) statusEl.textContent = `Status: Tracking ${activeAircraft.length} Aircraft (${result.source})`;
       } else {
-        nextPollDelayMs = 30000;
-        if (statusEl) statusEl.textContent = 'Status: Waiting on Proxy/Rate Limit... Retrying';
+        nextPollDelayMs = 20000;
+        if (statusEl) statusEl.textContent = 'Status: Connection Retrying...';
       }
 
       renderFlightBoard(activeAircraft);
@@ -465,7 +454,15 @@
 
     function updateNearestScrollboard(acList) {
       const valid = acList.filter(ac => ac.lat && ac.lon && calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon) <= 50);
-      if (valid.length === 0) return;
+      if (valid.length === 0) {
+        document.getElementById('sb-airline').innerText = "Searching Airspace Target...";
+        document.getElementById('sb-type').innerText = "Type: --";
+        document.getElementById('sb-route').innerText = "Location: Directing scope...";
+        document.getElementById('sb-distance').innerText = "-- NM";
+        document.getElementById('sb-alt').innerText = "Alt: -- ft";
+        document.getElementById('sb-speed').innerText = "Speed: -- kts";
+        return;
+      }
 
       valid.sort((a, b) => calcDistanceNM(userConfig.lat, userConfig.lon, a.lat, a.lon) - calcDistanceNM(userConfig.lat, userConfig.lon, b.lat, b.lon));
 
