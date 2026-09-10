@@ -488,7 +488,6 @@
       if (isFetching) return;
       isFetching = true;
 
-      // Use direct endpoints (without CORS proxies) to prevent 403 proxy errors
       const endpoints = [
         `https://api.adsb.lol/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`,
         `https://api.airplanes.live/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`
@@ -747,6 +746,20 @@
         const trackAngle = (ac.track || ac.hdg || 0) * (Math.PI / 180);
         const category = getAircraftCategory(ac);
         const mil = isMilitary(ac);
+        const isLocked = lockedAircraft && ac.hex === lockedAircraft.hex;
+
+        // Draw flashing target lock reticle around locked aircraft
+        if (isLocked) {
+          const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 150);
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 16 + (pulse * 8), 0, Math.PI * 2);
+          ctx.strokeStyle = mil ? `rgba(255, 0, 127, ${0.4 + pulse * 0.6})` : `rgba(16, 185, 129, ${0.4 + pulse * 0.6})`;
+          ctx.lineWidth = 2;
+          ctx.setLineDash([3, 3]);
+          ctx.stroke();
+          ctx.restore();
+        }
 
         ctx.save();
         ctx.translate(p.x, p.y);
@@ -860,7 +873,6 @@
       
       requestAnimationFrame(drawRadarScope);
       
-      // Initial fetch + steady 12-second poll interval to prevent 429 rate-limiting
       fetchLiveFlights();
       setInterval(fetchLiveFlights, 12000);
     });
