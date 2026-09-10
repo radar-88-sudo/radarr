@@ -542,5 +542,107 @@
       pollADSB();
     });
   </script>
+  // --- CONFIGURATION & STATE ---
+const ADSB_CONFIG = {
+  lat: 52.9529,
+  lon: -0.9547,
+  dist: 50,
+  pollInterval: 10000, // 10 seconds to respect rate limits
+  backoffIncrement: 15000 // 15 seconds added if 429 occurs
+};
+
+let isFetching = false;
+let currentBackoff = 0;
+
+// --- FETCH DATA WITH BACKOFF & CORS PROXY ---
+async function fetchADSBData() {
+  if (isFetching) return null;
+  isFetching = true;
+
+  const directUrl = `https://api.adsb.lol/v2/lat/${ADSB_CONFIG.lat}/lon/${ADSB_CONFIG.lon}/dist/${ADSB_CONFIG.dist}`;
+  const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(directUrl)}`;
+
+  // Direct endpoint first, proxy endpoint second if direct fails/CORS blocks
+  const endpoints = [directUrl, proxyUrl];
+  let data = null;
+
+  for (const url of endpoints) {
+    try {
+      const response = await fetch(url);
+
+      // Handle Rate Limiting (HTTP 429)
+      if (response.status === 429) {
+        console.warn('Rate limit hit (429). Increasing delay...');
+        currentBackoff = ADSB_CONFIG.backoffIncrement;
+        updateUIStatus('Rate limited by API. Backing off...');
+        break;
+      }
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      data = await response.json();
+      currentBackoff = 0; // Reset backoff on success
+      break; 
+
+    } catch (err) {
+      console.error(`Endpoint failed (${url}):`, err);
+    }
+  }
+
+  isFetching = false;
+
+  if (data) {
+    renderADSBData(data);
+  } else {
+    updateUIStatus('Failed to fetch aircraft data. Retrying...');
+  }
+
+  return data;
+}
+
+// --- RENDER / PROCESS DATA ---
+function renderADSBData(data) {
+  const aircraftList = data.ac || data.aircraft || [];
+  updateUIStatus(`Updated: ${new Date().toLocaleTimeString()} | Aircraft in range: ${aircraftList.length}`);
+
+  // If you have a map (e.g., Leaflet or OpenLayers), call your map update function here:
+  if (typeof updateMapMarkers === 'function') {
+    updateMapMarkers(aircraftList);
+  }
+
+  // If you have a table or display container:
+  const outputContainer = document.getElementById('output') || document.getElementById('radar-data');
+  if (outputContainer) {
+    outputContainer.textContent = JSON.stringify(data, null, 2);
+  }
+}
+
+// --- HELPER TO UPDATE UI STATUS ---
+function updateUIStatus(message) {
+  const statusElem = document.getElementById('status') || document.getElementById('radar-status');
+  if (statusElem) {
+    statusElem.innerText = message;
+  } else {
+    console.log('[ADSB Status]:', message);
+  }
+}
+
+// --- RECURSIVE POLLING LOOP ---
+function pollADSB() {
+  const nextDelay = ADSB_CONFIG.pollInterval + currentBackoff;
+
+  setTimeout(async () => {
+    await fetchADSBData();
+    pollADSB(); // Ensures requests do not overlap
+  }, nextDelay);
+}
+
+// --- INITIALIZE ON DOM LOAD ---
+document.addEventListener('DOMContentLoaded', () => {
+  fetchADSBData(); // First load
+  pollADSB();       // Start polling loop
+});
 </body>
 </html>
