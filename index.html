@@ -444,6 +444,12 @@
       if (cat.startsWith('H') || ['R44', 'R22', 'EC35', 'H135', 'H145', 'B06', 'AS35', 'S76', 'AW13'].some(s => type.includes(s))) {
         return 'HELICOPTER';
       }
+      if (['F16', 'F15', 'F18', 'EUT', 'TOR', 'HAWK', 'A10', 'C130', 'C17'].some(s => type.includes(s)) || cat === 'A7') {
+        return 'FIGHTER_MILITARY';
+      }
+      if (['GLF', 'CL3', 'CL6', 'LJ', 'FA7', 'PRM', 'E55', 'H25B', 'C56X', 'LJ35'].some(s => type.includes(s)) || cat === 'A4') {
+        return 'BUSINESS_JET';
+      }
       if (['A380', 'B744', 'B748'].some(s => type.includes(s))) {
         return 'SUPER_HEAVY';
       }
@@ -454,12 +460,12 @@
         return 'REGIONAL';
       }
       if (['AT7', 'AT4', 'DH8', 'SF3', 'SB2', 'BE2', 'PC12', 'C208'].some(s => type.includes(s))) {
-        return 'TURBOPROP';
+        return 'TURBOPROP_HIGH';
       }
       if (['C172', 'C150', 'C182', 'PA28', 'PA34', 'SR20', 'SR22', 'DA40', 'DA42'].some(s => type.includes(s)) || cat === 'A1') {
         return 'LIGHT';
       }
-      return 'NARROWBODY'; // Standard Narrowbody Jet (A320, B737 family)
+      return 'NARROWBODY'; // Standard Narrowbody Jet (A320, B737)
     }
 
     function drawRadarScope() {
@@ -491,7 +497,7 @@
 
       ctx.setLineDash([]);
 
-      // Draw unique aircraft silhouette shapes based on specific type matching
+      // Draw highly distinct, custom vector silhouettes based on exact aircraft class
       liveAircraft.forEach(ac => {
         if (!ac.lat || !ac.lon) return;
         const p = map.latLngToContainerPoint([ac.lat, ac.lon]);
@@ -505,111 +511,157 @@
         ctx.beginPath();
 
         if (category === 'HELICOPTER') {
-          // Helicopter rotor / body silhouette
+          // Helicopter rotor cross / bubble body
           ctx.arc(0, 0, 4, 0, Math.PI * 2);
-          ctx.moveTo(0, 4); ctx.lineTo(0, 14);
-          ctx.moveTo(-12, 0); ctx.lineTo(12, 0);
-          ctx.moveTo(0, -12); ctx.lineTo(0, 12);
-        } else if (category === 'SUPER_HEAVY') {
-          // Quad-engine Super Heavy (A380 / B747)
-          ctx.moveTo(0, -22);
+          ctx.moveTo(0, -4); ctx.lineTo(0, 14);
+          ctx.moveTo(-13, 0); ctx.lineTo(13, 0);
+          ctx.moveTo(0, -13); ctx.lineTo(0, 13);
+        } 
+        else if (category === 'FIGHTER_MILITARY') {
+          // Sharp Delta-Wing Fighter / Military Jet silhouette
+          ctx.moveTo(0, -16);
+          ctx.lineTo(3, -6);
+          ctx.lineTo(18, 8);
+          ctx.lineTo(4, 6);
+          ctx.lineTo(2, 14);
+          ctx.lineTo(4, 17);
+          ctx.lineTo(0, 15);
+          ctx.lineTo(-4, 17);
+          ctx.lineTo(-2, 14);
+          ctx.lineTo(-4, 6);
+          ctx.lineTo(-18, 8);
+          ctx.lineTo(-3, -6);
+          ctx.closePath();
+        } 
+        else if (category === 'BUSINESS_JET') {
+          // Sleek Long-Nose Executive Jet with Winglets
+          ctx.moveTo(0, -17);
+          ctx.lineTo(2.5, -4);
+          ctx.lineTo(14, 2);
+          ctx.lineTo(16, 0); // Winglet
+          ctx.lineTo(3.5, 6);
+          ctx.lineTo(2, 13);
+          ctx.lineTo(4, 16);
+          ctx.lineTo(0, 14);
+          ctx.lineTo(-4, 16);
+          ctx.lineTo(-2, 13);
+          ctx.lineTo(-3.5, 6);
+          ctx.lineTo(-16, 0); // Winglet
+          ctx.lineTo(-14, 2);
+          ctx.lineTo(-2.5, -4);
+          ctx.closePath();
+        } 
+        else if (category === 'SUPER_HEAVY') {
+          // Quad-Engine Jumbo Jet (A380 / B747)
+          ctx.moveTo(0, -24);
           ctx.lineTo(6, -6);
-          ctx.lineTo(26, 4);
-          ctx.lineTo(8, 11);
-          ctx.lineTo(4, 18);
-          ctx.lineTo(9, 22);
-          ctx.lineTo(0, 19);
-          ctx.lineTo(-9, 22);
-          ctx.lineTo(-4, 18);
-          ctx.lineTo(-8, 11);
-          ctx.lineTo(-26, 4);
+          ctx.lineTo(28, 4);
+          ctx.lineTo(9, 12);
+          ctx.lineTo(4.5, 19);
+          ctx.lineTo(10, 23);
+          ctx.lineTo(0, 20);
+          ctx.lineTo(-10, 23);
+          ctx.lineTo(-4.5, 19);
+          ctx.lineTo(-9, 12);
+          ctx.lineTo(-28, 4);
           ctx.lineTo(-6, -6);
           ctx.closePath();
-        } else if (category === 'WIDEBODY') {
+        } 
+        else if (category === 'WIDEBODY') {
           // Widebody Twin Jet (B777, B787, A350)
-          ctx.moveTo(0, -19);
+          ctx.moveTo(0, -20);
           ctx.lineTo(5.5, -5);
-          ctx.lineTo(21, 5);
-          ctx.lineTo(7, 10);
-          ctx.lineTo(3.5, 16);
-          ctx.lineTo(7.5, 20);
-          ctx.lineTo(0, 17);
-          ctx.lineTo(-7.5, 20);
-          ctx.lineTo(-3.5, 16);
-          ctx.lineTo(-7, 10);
-          ctx.lineTo(-21, 5);
+          ctx.lineTo(23, 5);
+          ctx.lineTo(7.5, 11);
+          ctx.lineTo(4, 17);
+          ctx.lineTo(8, 21);
+          ctx.lineTo(0, 18);
+          ctx.lineTo(-8, 21);
+          ctx.lineTo(-4, 17);
+          ctx.lineTo(-7.5, 11);
+          ctx.lineTo(-23, 5);
           ctx.lineTo(-5.5, -5);
           ctx.closePath();
-        } else if (category === 'REGIONAL') {
-          // Regional Jet (E-Jet, CRJ)
-          ctx.moveTo(0, -13);
+        } 
+        else if (category === 'REGIONAL') {
+          // Regional Jet (E-Jet / CRJ)
+          ctx.moveTo(0, -14);
           ctx.lineTo(3.5, -3);
-          ctx.lineTo(13, 2);
-          ctx.lineTo(4, 7);
-          ctx.lineTo(2, 12);
-          ctx.lineTo(4.5, 14);
-          ctx.lineTo(0, 12);
-          ctx.lineTo(-4.5, 14);
-          ctx.lineTo(-2, 12);
-          ctx.lineTo(-4, 7);
-          ctx.lineTo(-13, 2);
+          ctx.lineTo(14, 3);
+          ctx.lineTo(4, 8);
+          ctx.lineTo(2.5, 13);
+          ctx.lineTo(5, 15);
+          ctx.lineTo(0, 13);
+          ctx.lineTo(-5, 15);
+          ctx.lineTo(-2.5, 13);
+          ctx.lineTo(-4, 8);
+          ctx.lineTo(-14, 3);
           ctx.lineTo(-3.5, -3);
           ctx.closePath();
-        } else if (category === 'TURBOPROP') {
-          // Turboprop (ATR 72, Dash 8) - Straight rectangular wings & engines
-          ctx.moveTo(0, -14);
-          ctx.lineTo(3, -4);
-          ctx.lineTo(17, 0);
-          ctx.lineTo(4, 3);
-          ctx.lineTo(2.5, 13);
-          ctx.lineTo(5, 16);
-          ctx.lineTo(0, 13.5);
-          ctx.lineTo(-5, 16);
-          ctx.lineTo(-2.5, 13);
-          ctx.lineTo(-4, 3);
-          ctx.lineTo(-17, 0);
-          ctx.lineTo(-3, -4);
-          ctx.closePath();
-        } else if (category === 'LIGHT') {
-          // Light Piston (Cessna / Piper)
-          ctx.moveTo(0, -11);
-          ctx.lineTo(2, -2);
-          ctx.lineTo(14, -1);
-          ctx.lineTo(2, 3);
-          ctx.lineTo(1.5, 10);
-          ctx.lineTo(3.5, 12);
-          ctx.lineTo(0, 10.5);
-          ctx.lineTo(-3.5, 12);
-          ctx.lineTo(-1.5, 10);
-          ctx.lineTo(-2, 3);
-          ctx.lineTo(-14, -1);
-          ctx.lineTo(-2, -2);
-          ctx.closePath();
-        } else {
-          // Standard Narrowbody Jet (A320 / B737 family)
+        } 
+        else if (category === 'TURBOPROP_HIGH') {
+          // High-Wing Turboprop (Dash 8 / ATR with straight high wings & nacelles)
           ctx.moveTo(0, -15);
+          ctx.lineTo(3, -5);
+          ctx.lineTo(18, -1);
+          ctx.lineTo(4, 2);
+          ctx.lineTo(2.5, 14);
+          ctx.lineTo(5.5, 17);
+          ctx.lineTo(0, 14.5);
+          ctx.lineTo(-5.5, 17);
+          ctx.lineTo(-2.5, 14);
+          ctx.lineTo(-4, 2);
+          ctx.lineTo(-18, -1);
+          ctx.lineTo(-3, -5);
+          ctx.closePath();
+        } 
+        else if (category === 'LIGHT') {
+          // Light Piston (Cessna / Piper)
+          ctx.moveTo(0, -12);
+          ctx.lineTo(2, -3);
+          ctx.lineTo(15, -2);
+          ctx.lineTo(2.5, 2);
+          ctx.lineTo(2, 11);
+          ctx.lineTo(4, 13);
+          ctx.lineTo(0, 11.5);
+          ctx.lineTo(-4, 13);
+          ctx.lineTo(-2, 11);
+          ctx.lineTo(-2.5, 2);
+          ctx.lineTo(-15, -2);
+          ctx.lineTo(-2, -3);
+          ctx.closePath();
+        } 
+        else {
+          // Standard Narrowbody Airliner (A320 / B737)
+          ctx.moveTo(0, -16);
           ctx.lineTo(4, -4);
-          ctx.lineTo(16, 3);
-          ctx.lineTo(4.5, 8);
-          ctx.lineTo(2.5, 13);
-          ctx.lineTo(5.5, 16);
-          ctx.lineTo(0, 13.5);
-          ctx.lineTo(-5.5, 16);
-          ctx.lineTo(-2.5, 13);
-          ctx.lineTo(-4.5, 8);
-          ctx.lineTo(-16, 3);
+          ctx.lineTo(17, 3);
+          ctx.lineTo(5, 9);
+          ctx.lineTo(2.5, 14);
+          ctx.lineTo(6, 17);
+          ctx.lineTo(0, 14.5);
+          ctx.lineTo(-6, 17);
+          ctx.lineTo(-2.5, 14);
+          ctx.lineTo(-5, 9);
+          ctx.lineTo(-17, 3);
           ctx.lineTo(-4, -4);
           ctx.closePath();
         }
 
+        // Color coding by type category
         if (category === 'HELICOPTER') {
           ctx.strokeStyle = '#10b981';
           ctx.lineWidth = 2;
           ctx.stroke();
         } else {
-          ctx.fillStyle = category === 'WIDEBODY' || category === 'SUPER_HEAVY' ? '#3b82f6' : '#10b981';
-          ctx.shadowColor = '#059669';
-          ctx.shadowBlur = 6;
+          let fillColor = '#10b981';
+          if (category === 'WIDEBODY' || category === 'SUPER_HEAVY') fillColor = '#3b82f6';
+          else if (category === 'BUSINESS_JET') fillColor = '#8b5cf6';
+          else if (category === 'FIGHTER_MILITARY') fillColor = '#f97316';
+
+          ctx.fillStyle = fillColor;
+          ctx.shadowColor = fillColor;
+          ctx.shadowBlur = 8;
           ctx.fill();
           ctx.shadowBlur = 0;
 
@@ -620,12 +672,12 @@
 
         ctx.restore();
 
-        // Label with Callsign + Aircraft Type Code (e.g. BAW123 [B77W])
+        // Label with Callsign + Aircraft Type Code
         const callsign = ac.flight ? ac.flight.trim() : ac.hex;
         const typeCode = ac.t ? `[${ac.t}]` : '';
         ctx.font = 'bold 11px monospace';
         ctx.fillStyle = '#1e293b';
-        ctx.fillText(`${callsign} ${typeCode}`, p.x + 14, p.y + 4);
+        ctx.fillText(`${callsign} ${typeCode}`, p.x + 15, p.y + 4);
       });
 
       const sweepLen = Math.max(canvas.width, canvas.height);
