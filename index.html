@@ -304,7 +304,7 @@
         keyboard: false
       }).setView([userConfig.lat, userConfig.lon], 8);
 
-      // Reliable CartoDB dark raster layer with zero text labels or road clutter
+      // Clean dark raster layer with zero text labels or road clutter
       L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/dark_nolabels/{z}/{x}/{y}{r}.png', {
         maxZoom: 19,
         subdomains: 'abcd',
@@ -349,39 +349,33 @@
 
     async function fetchADSBData() {
       const { lat, lon } = userConfig;
-      const targetApi = `https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
-      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetApi)}`;
-
+      
+      // Primary Source: ADSB.lol via corsproxy.io
       try {
-        const res = await fetch(proxyUrl);
+        const targetApi = `https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
+        const res = await fetch(`https://corsproxy.io/?${encodeURIComponent(targetApi)}`);
         if (res.ok) {
-          const wrapper = await res.json();
-          if (wrapper && wrapper.contents) {
-            const data = JSON.parse(wrapper.contents);
-            if (data && data.ac) {
-              return { acList: data.ac, source: 'ADSB.lol (Via AllOrigins)' };
-            }
+          const data = await res.json();
+          if (data && data.ac) {
+            return { acList: data.ac, source: 'ADSB.lol' };
           }
         }
       } catch (e) {
-        console.warn('Primary proxy fetch error:', e);
+        console.warn('Primary fetch error:', e);
       }
 
+      // Fallback Source: ADSB.fi via corsproxy.io
       try {
         const altTarget = `https://opendata.adsb.fi/api/v3/lat/${lat.toFixed(4)}/lon/${lon.toFixed(4)}/dist/50`;
-        const altProxy = `https://api.allorigins.win/get?url=${encodeURIComponent(altTarget)}`;
-        const res2 = await fetch(altProxy);
+        const res2 = await fetch(`https://corsproxy.io/?${encodeURIComponent(altTarget)}`);
         if (res2.ok) {
-          const wrapper2 = await res2.json();
-          if (wrapper2 && wrapper2.contents) {
-            const data2 = JSON.parse(wrapper2.contents);
-            if (data2 && data2.aircraft) {
-              return { acList: data2.aircraft, source: 'ADSB.fi (Via AllOrigins)' };
-            }
+          const data2 = await res2.json();
+          if (data2 && data2.aircraft) {
+            return { acList: data2.aircraft, source: 'ADSB.fi' };
           }
         }
       } catch (e2) {
-        console.warn('Fallback proxy fetch error:', e2);
+        console.warn('Fallback fetch error:', e2);
       }
 
       return null;
