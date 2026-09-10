@@ -275,7 +275,6 @@
     }
 
     function isMilitaryAircraft(ac) {
-      // Direct API database flags
       if (ac.dbFlags !== undefined && (ac.dbFlags & 1) !== 0) return true;
       if (ac.mil === true || ac.mil === 1) return true;
       if (ac.t === 'Military') return true;
@@ -283,7 +282,6 @@
       const flight = (ac.flight || '').trim().toUpperCase();
       const hex = (ac.hex || '').trim().toUpperCase();
 
-      // Common military callsign prefixes & flight identifiers
       const milPrefixes = [
         'RFR', 'RRR', 'CNV', 'NAVY', 'RCH', 'C2', 'ASCOT', 'VIPER', 'HAWK', 
         'Sentry', 'REACH', 'VALKER', 'FORCE', 'JAKE', 'TOPCAT', 'BOEING',
@@ -291,11 +289,9 @@
       ];
       if (milPrefixes.some(p => flight.startsWith(p))) return true;
 
-      // Common military type designations
       const milTypes = ['A400', 'C17', 'C130', 'A332', 'P8', 'KC135', 'E3TF', 'T45', 'F16', 'F35', 'TYPH'];
       if (ac.t && milTypes.some(type => ac.t.toUpperCase().includes(type))) return true;
 
-      // UK/NATO military hex block ranges (e.g., 43Cxxx for RAF, AE/AE1/AE2 for US Mil)
       if (hex.startsWith('43C') || hex.startsWith('AE') || hex.startsWith('3E8') || hex.startsWith('3FA')) return true;
 
       return false;
