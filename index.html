@@ -255,7 +255,7 @@
       lat: 52.9529,
       lon: -0.9547,
       radiusNM: 50,
-      pollInterval: 15000
+      pollInterval: 20000 // Increased to 20s to avoid rate limiting (429)
     };
 
     let activeAircraft = [];
@@ -284,7 +284,7 @@
         doubleClickZoom: false,
         boxZoom: false,
         keyboard: false
-      }).setView([ADSB_CONFIG.lat, ADSB_CONFIG.lon], 8);
+      }).setView([ADSB.lat || ADSB_CONFIG.lat, ADSB.lon || ADSB_CONFIG.lon], 8);
 
       L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
         maxZoom: 16
@@ -328,10 +328,12 @@
       if (isFetching) return;
       isFetching = true;
 
-      const url = `https://api.adsb.lol/v2/lat/${ADSB_CONFIG.lat}/lon/${ADSB_CONFIG.lon}/dist/${ADSB_CONFIG.radiusNM}`;
+      // Use a public CORS proxy wrapper to bypass GitHub Pages CORS restrictions
+      const targetUrl = `https://api.adsb.lol/v2/lat/${ADSB_CONFIG.lat}/lon/${ADSB_CONFIG.lon}/dist/${ADSB_CONFIG.radiusNM}`;
+      const proxyUrl = `https://api.allorigins.win/raw?url=` + encodeURIComponent(targetUrl);
 
       try {
-        const response = await fetch(url, { mode: 'cors' });
+        const response = await fetch(proxyUrl);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         
         const data = await response.json();
@@ -341,7 +343,7 @@
         renderFlightBoard(activeAircraft);
         updateNearestScrollboard(activeAircraft);
       } catch (err) {
-        console.warn("Primary fetch failed, checking connection...", err);
+        console.warn("Proxy fetch failed, retrying...", err);
         updateConnectionStatus("Status: Connection Retry...");
       } finally {
         isFetching = false;
@@ -369,7 +371,6 @@
         return;
       }
 
-      // Sort by closest distance first
       validFlights.sort((a, b) => {
         const distA = calcDistanceNM(ADSB_CONFIG.lat, ADSB_CONFIG.lon, a.lat, a.lon);
         const distB = calcDistanceNM(ADSB_CONFIG.lat, ADSB_CONFIG.lon, b.lat, b.lon);
