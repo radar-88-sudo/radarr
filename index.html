@@ -425,7 +425,6 @@
       } catch (e) {}
     }
 
-    // Continuously try unlocking audio until the browser flag takes effect
     setInterval(initKioskAudio, 2000);
 
     const aircraftModelNames = {
@@ -473,7 +472,6 @@
     }
 
     function playAlertTone() {
-      // SAFETY GUARD: Do not attempt audio if context isn't fully running yet
       if (!audioCtx || audioCtx.state !== 'running') return;
       try {
         const osc = audioCtx.createOscillator();
@@ -495,7 +493,6 @@
     }
 
     function playEmergencyTone() {
-      // SAFETY GUARD: Do not attempt audio if context isn't fully running yet
       if (!audioCtx || audioCtx.state !== 'running') return;
       try {
         for (let i = 0; i < 3; i++) {
@@ -682,10 +679,15 @@
         `https://api.airplanes.live/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`
       ];
       let success = false;
+      let hitRateLimit = false;
 
       for (let url of endpoints) {
         try {
           const response = await fetch(url, { headers: { 'Accept': 'application/json' } });
+          if (response.status === 429 || response.status === 403) {
+            hitRateLimit = true;
+            continue;
+          }
           if (response.ok) {
             const data = await response.json();
             const aircrafts = data.ac || data.aircraft;
@@ -699,11 +701,11 @@
         } catch (err) {}
       }
 
-      if (!success) updateUIState(false);
+      if (!success) updateUIState(false, hitRateLimit);
       isFetching = false;
     }
 
-    function updateUIState(isConnected) {
+    function updateUIState(isConnected, hitRateLimit = false) {
       const statusEl = document.getElementById('connection-status');
       if (isConnected) {
         statusEl.innerText = `Live Connected (${liveAircraft.length} targets)`;
@@ -712,8 +714,13 @@
         renderFlightBoard(liveAircraft);
         updateNearestScrollboard(liveAircraft);
       } else {
-        statusEl.innerText = `Connecting... (Retrying)`;
-        statusEl.style.color = '#f59e0b';
+        if (hitRateLimit) {
+          statusEl.innerText = `Rate Limited (429/403) — Backing off...`;
+          statusEl.style.color = '#ef4444';
+        } else {
+          statusEl.innerText = `Connecting... (Retrying)`;
+          statusEl.style.color = '#f59e0b';
+        }
       }
     }
 
@@ -880,7 +887,9 @@
       
       requestAnimationFrame(drawRadarScope);
       fetchLiveFlights();
-      setInterval(fetchLiveFlights, 12000);
+      
+      // Increased interval from 12s to 20s to prevent API 429 rate limit bans
+      setInterval(fetchLiveFlights, 20000);
     });
   </script>
 </body>
