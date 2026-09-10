@@ -486,16 +486,15 @@
       });
     }
 
-    function fetchPlanespottersJSONP(endpoint) {
+    // Helper function: Perform Planespotters query using JSONP to bypass CORS/CORB
+    function fetchPlanespottersJSONP(path) {
       return new Promise((resolve) => {
-        const callbackName = 'ps_cb_' + Math.random().toString(36).substring(2, 9);
+        const cbName = 'cb_ps_' + Math.random().toString(36).substring(2, 9);
         const script = document.createElement('script');
 
-        window[callbackName] = function(data) {
-          delete window[callbackName];
-          if (document.body.contains(script)) {
-            document.body.removeChild(script);
-          }
+        window[cbName] = function(data) {
+          delete window[cbName];
+          if (script.parentNode) script.parentNode.removeChild(script);
           if (data && data.photos && data.photos.length > 0) {
             resolve(data.photos[0].thumbnail_large?.src || data.photos[0].thumbnail?.src || null);
           } else {
@@ -504,14 +503,12 @@
         };
 
         script.onerror = function() {
-          delete window[callbackName];
-          if (document.body.contains(script)) {
-            document.body.removeChild(script);
-          }
+          delete window[cbName];
+          if (script.parentNode) script.parentNode.removeChild(script);
           resolve(null);
         };
 
-        script.src = `https://api.planespotters.net/pub/photos/${endpoint}?callback=${callbackName}`;
+        script.src = `https://api.planespotters.net/pub/photos/${path}?callback=${cbName}`;
         document.body.appendChild(script);
       });
     }
@@ -528,6 +525,7 @@
       if (trackKey === currentTrackedKey) return;
       currentTrackedKey = trackKey;
 
+      // 1. Primary: Match exact Tail Registration on Planespotters.net
       if (reg) {
         const photoUrl = await fetchPlanespottersJSONP(`reg/${encodeURIComponent(reg)}`);
         if (photoUrl) {
@@ -536,6 +534,7 @@
         }
       }
 
+      // 2. Secondary: Match by Hex Code on Planespotters.net
       if (hex) {
         const photoUrl = await fetchPlanespottersJSONP(`hex/${encodeURIComponent(hex)}`);
         if (photoUrl) {
@@ -544,6 +543,7 @@
         }
       }
 
+      // 3. Fallback: Match by ICAO Aircraft Type on Planespotters.net (shows same model)
       if (typeCode) {
         const photoUrl = await fetchPlanespottersJSONP(`icao/${encodeURIComponent(typeCode)}`);
         if (photoUrl) {
@@ -552,6 +552,7 @@
         }
       }
 
+      // 4. Guaranteed Aircraft Silhouette Fallback (Clean SVG)
       imgEl.src = GENERIC_AIRCRAFT_IMAGE;
     }
 
@@ -560,6 +561,7 @@
         if (!ac.lat || !ac.lon) return false;
         if (calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon) > 50) return false;
         
+        // Ignore G103 aircraft types from locking on
         const acType = (ac.t || ac.type || '').trim().toUpperCase();
         if (acType === 'G103') return false;
 
