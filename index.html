@@ -140,29 +140,29 @@
     .aircraft-grid {
       display: flex;
       flex-direction: column;
-      gap: 0.45rem;
+      gap: 0.5rem;
       flex: 1;
       overflow-y: auto;
       padding-right: 4px;
     }
 
+    /* Vertical card layout with large hero photo */
     .ac-card {
-      background: rgba(30, 41, 59, 0.7);
+      background: rgba(30, 41, 59, 0.75);
       border: 1px solid rgba(255, 255, 255, 0.08);
-      padding: 0.5rem 0.6rem;
-      border-radius: 6px;
+      padding: 0.6rem;
+      border-radius: 8px;
       display: flex;
-      align-items: center;
-      gap: 0.75rem;
+      flex-direction: column;
+      gap: 0.5rem;
     }
 
-    /* Increased size of thumbnail photos here */
     .ac-thumb {
-      width: 84px;
-      height: 56px;
+      width: 100%;
+      height: 110px;
       background: rgba(10, 15, 30, 0.9);
       border: 1px solid var(--card-border);
-      border-radius: 4px;
+      border-radius: 6px;
       overflow: hidden;
       display: flex;
       align-items: center;
@@ -558,7 +558,7 @@
       if (photoUrl) {
         thumbEl.innerHTML = `<img src="${photoUrl}" alt="Military Aircraft Photo">`;
       } else {
-        thumbEl.innerHTML = `<span style="font-size:0.65rem; color:var(--accent-military); font-weight:bold; text-align:center;">MIL</span>`;
+        thumbEl.innerHTML = `<span style="font-size:0.75rem; color:var(--accent-military); font-weight:bold; text-align:center;">MILITARY AIRCRAFT</span>`;
       }
     }
 
@@ -692,15 +692,17 @@
         card.className = 'ac-card';
         card.innerHTML = `
           <div class="ac-thumb" id="${cardId}-thumb">
-            <span style="font-size:0.65rem; color:var(--accent-military); font-weight:bold;">MIL</span>
+            <span style="font-size:0.75rem; color:var(--accent-military); font-weight:bold;">MILITARY AIRCRAFT</span>
           </div>
-          <div style="flex: 1; min-width: 0;">
-            <div style="font-weight:bold; font-size:0.85rem; color:var(--accent-military); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${ac.flight ? ac.flight.trim() : ac.hex}</div>
-            <div style="font-size:0.7rem; color:var(--text-dim);">[${ac.t || 'MIL'}] • ${ac.gs || 0} kts</div>
-          </div>
-          <div style="text-align:right; flex-shrink: 0;">
-            <div style="font-weight:bold; color:var(--accent-green); font-size:0.85rem;">${dist.toFixed(1)} NM</div>
-            <div style="font-size:0.7rem; color:var(--text-dim);">${ac.alt_baro || 'Ground'} ft</div>
+          <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+            <div>
+              <div style="font-weight:bold; font-size:0.9rem; color:var(--accent-military);">${ac.flight ? ac.flight.trim() : ac.hex}</div>
+              <div style="font-size:0.75rem; color:var(--text-dim);">[${ac.t || 'MIL'}] • ${ac.gs || 0} kts</div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-weight:bold; color:var(--accent-green); font-size:0.9rem;">${dist.toFixed(1)} NM</div>
+              <div style="font-size:0.75rem; color:var(--text-dim);">${ac.alt_baro || 'Ground'} ft</div>
+            </div>
           </div>
         `;
         gridEl.appendChild(card);
