@@ -16,7 +16,7 @@
       --text-dim: #94a3b8;
       --accent-green: #10b981;
       --accent-blue: #3b82f6;
-      --accent-military: #f97316;
+      --accent-military: #ff007f; /* Bright Pink for Military */
       --accent-red: #ef4444;
     }
 
@@ -317,9 +317,7 @@
     let pollIntervalTimer = null;
     let currentIntervalMs = 15000;
 
-    // Comprehensive Airport Database with Real Names and Locations
     const airportDatabase = {
-      // UK Airports
       'EGLL': 'London Heathrow, UK',
       'EGKK': 'London Gatwick, UK',
       'EGGW': 'London Luton, UK',
@@ -342,8 +340,6 @@
       'EGNT': 'Newcastle International, UK',
       'EGNM': 'Leeds Bradford Airport, UK',
       'EGPO': 'Stornoway Airport, UK',
-      
-      // Major European Hubs
       'EHAM': 'Amsterdam Schiphol, Netherlands',
       'LFPG': 'Paris Charles de Gaulle, France',
       'LFPO': 'Paris Orly, France',
@@ -369,8 +365,6 @@
       'LTFM': 'Istanbul Airport, Turkey',
       'EPWA': 'Warsaw Chopin, Poland',
       'LKPR': 'Prague Václav Havel, Czechia',
-
-      // North American & Global Hubs
       'KJFK': 'New York JFK, USA',
       'KLAX': 'Los Angeles International, USA',
       'KORD': 'Chicago O\'Hare, USA',
@@ -630,7 +624,7 @@
         card.className = 'ac-card';
         card.innerHTML = `
           <div>
-            <div style="font-weight:bold; font-size:0.95rem; color:#f97316;">${ac.flight ? ac.flight.trim() : ac.hex}</div>
+            <div style="font-weight:bold; font-size:0.95rem; color:var(--accent-military);">${ac.flight ? ac.flight.trim() : ac.hex}</div>
             <div style="font-size:0.72rem; color:var(--text-dim);">[${ac.t || 'MIL'}] • ${ac.gs || 0} kts</div>
           </div>
           <div style="text-align:right;">
@@ -642,12 +636,10 @@
       });
     }
 
-    // Intelligent Route Resolution based on Callsign / Airline Prefix & Hex Hash
     function resolveFlightRoute(flightStr, ac) {
       const callsign = (flightStr || '').toUpperCase().trim();
       const prefix = callsign.length >= 3 ? callsign.substring(0, 3) : '';
       
-      // Military Routing
       if (['RRR', 'ASCOT', 'RCH', 'DUKE', 'REACH', 'BOOM'].some(p => callsign.startsWith(p))) {
         const milBases = ['EGVN', 'EGUN', 'EGYM', 'EGDL', 'EGVA', 'EGNX'];
         const hash = parseInt(ac.hex, 16) || 0;
@@ -657,7 +649,6 @@
         return { fromCode: from, toCode: to };
       }
 
-      // Airline Specific Common UK & European Routes
       const airlineRoutes = {
         'BAW': { from: 'EGLL', to: 'EHAM' },
         'EZY': { from: 'EGNX', to: 'LFPG' },
@@ -675,7 +666,6 @@
         return airlineRoutes[prefix];
       }
 
-      // Deterministic fallback across airport database for realism
       const keys = Object.keys(airportDatabase);
       const hash = parseInt(ac.hex, 16) || 12345;
       const fromCode = keys[hash % keys.length];
@@ -718,7 +708,6 @@
         rateEl.innerHTML = `<span style="color: var(--text-dim);">— Level Flight</span>`;
       }
 
-      // Resolve Real From and To Airports
       const route = resolveFlightRoute(flightStr, nearest);
       const fromName = airportDatabase[route.fromCode] || `${route.fromCode} Aerodrome`;
       const toName = airportDatabase[route.toCode] || `${route.toCode} Aerodrome`;
@@ -761,6 +750,7 @@
         const p = map.latLngToContainerPoint([ac.lat, ac.lon]);
         const trackAngle = (ac.track || ac.hdg || 0) * (Math.PI / 180);
         const category = getAircraftCategory(ac);
+        const mil = isMilitary(ac);
 
         ctx.save();
         ctx.translate(p.x, p.y);
@@ -811,7 +801,16 @@
           ctx.closePath();
         }
 
-        if (category === 'HELICOPTER') {
+        if (mil) {
+          ctx.fillStyle = '#ff007f';
+          ctx.shadowColor = '#ff007f';
+          ctx.shadowBlur = 8;
+          ctx.fill();
+          ctx.shadowBlur = 0;
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        } else if (category === 'HELICOPTER') {
           ctx.strokeStyle = '#10b981';
           ctx.lineWidth = 2;
           ctx.stroke();
@@ -819,7 +818,6 @@
           let fillColor = '#10b981';
           if (category === 'WIDEBODY' || category === 'SUPER_HEAVY') fillColor = '#3b82f6';
           else if (category === 'BUSINESS_JET') fillColor = '#8b5cf6';
-          else if (category === 'FIGHTER_MILITARY') fillColor = '#f97316';
 
           ctx.fillStyle = fillColor;
           ctx.shadowColor = fillColor;
@@ -837,7 +835,7 @@
         const callsign = ac.flight ? ac.flight.trim() : ac.hex;
         const typeCode = ac.t ? `[${ac.t}]` : '';
         ctx.font = 'bold 11px monospace';
-        ctx.fillStyle = '#1e293b';
+        ctx.fillStyle = mil ? '#ff007f' : '#1e293b';
         ctx.fillText(`${callsign} ${typeCode}`, p.x + 15, p.y + 4);
       });
 
