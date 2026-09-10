@@ -99,11 +99,6 @@
       background: #090d16;
     }
 
-    /* Clean dark styling for CartoDB Dark Matter map */
-    .leaflet-tile-pane {
-      filter: brightness(0.9) contrast(1.1);
-    }
-
     canvas {
       position: absolute;
       top: 0;
@@ -309,10 +304,11 @@
         keyboard: false
       }).setView([userConfig.lat, userConfig.lon], 8);
 
-      // Clean, uncluttered Dark Matter tile layer (no distracting city names or roads)
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
+      // Reliable CartoDB dark raster layer with zero text labels or road clutter
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/dark_nolabels/{z}/{x}/{y}{r}.png', {
         maxZoom: 19,
-        subdomains: 'abcd'
+        subdomains: 'abcd',
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
       }).addTo(map);
 
       const radiusMeters = userConfig.radiusNM * 1852;
