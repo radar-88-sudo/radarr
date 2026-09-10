@@ -347,35 +347,49 @@
       }
     }
 
+    // JSONP wrapper loader to completely bypass CORS & 403 blocks on GitHub Pages
+    function fetchJSONP(url) {
+      return new Promise((resolve, reject) => {
+        const callbackName = 'adsb_cb_' + Math.round(100000 * Math.random());
+        window[callbackName] = function(data) {
+          delete window[callbackName];
+          document.body.removeChild(script);
+          resolve(data);
+        };
+
+        const script = document.createElement('script');
+        script.src = `${url}${url.includes('?') ? '&' : '?'}callback=${callbackName}`;
+        script.onerror = function() {
+          delete window[callbackName];
+          if (script.parentNode) script.parentNode.removeChild(script);
+          reject(new Error('JSONP script load error'));
+        };
+
+        document.body.appendChild(script);
+      });
+    }
+
     async function fetchADSBData() {
       const { lat, lon } = userConfig;
       
-      // Primary Source: airplanes.live point endpoint (native CORS support)
       try {
-        const targetApi = `https://api.airplanes.live/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
-        const res = await fetch(targetApi);
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.ac) {
-            return { acList: data.ac, source: 'Airplanes.live' };
-          }
+        // Try Airplanes.live JSONP endpoint
+        const data = await fetchJSONP(`https://api.airplanes.live/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`);
+        if (data && data.ac) {
+          return { acList: data.ac, source: 'Airplanes.live' };
         }
       } catch (e) {
-        console.warn('Airplanes.live fetch error:', e);
+        console.warn('Airplanes.live JSONP error:', e);
       }
 
-      // Fallback Source: ADSB.lol direct endpoint
       try {
-        const altTarget = `https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
-        const res2 = await fetch(altTarget);
-        if (res2.ok) {
-          const data2 = await res2.json();
-          if (data2 && data2.ac) {
-            return { acList: data2.ac, source: 'ADSB.lol' };
-          }
+        // Fallback to ADSB.lol JSONP endpoint
+        const data2 = await fetchJSONP(`https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`);
+        if (data2 && data2.ac) {
+          return { acList: data2.ac, source: 'ADSB.lol' };
         }
       } catch (e2) {
-        console.warn('ADSB.lol fallback error:', e2);
+        console.warn('ADSB.lol JSONP error:', e2);
       }
 
       return null;
