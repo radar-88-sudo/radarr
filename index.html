@@ -351,7 +351,7 @@
     async function fetchADSBData() {
       const { lat, lon } = userConfig;
 
-      // Primary Direct Source (ADSB.one allows browser fetch directly without CORS blocks)
+      // Primary source: ADSB.one (direct connection, no proxy or CORS blocks)
       try {
         const target = `https://api.adsb.one/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
         const res = await fetch(target);
@@ -361,13 +361,13 @@
         }
       } catch (e) {}
 
-      // Backup Source
+      // Fallback source: Airplanes.live direct endpoint
       try {
-        const target = `https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
+        const target = `https://api.airplanes.live/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
         const res = await fetch(target);
         if (res.ok) {
           const data = await res.json();
-          if (data && data.ac) return { acList: data.ac, source: 'ADSB.lol' };
+          if (data && data.ac) return { acList: data.ac, source: 'Airplanes.live' };
         }
       } catch (e) {}
 
