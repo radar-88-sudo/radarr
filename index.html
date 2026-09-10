@@ -350,7 +350,7 @@
 
     async function fetchADSBData() {
       const { lat, lon } = userConfig;
-      const proxy = "https://api.cors.lol/?url=";
+      const proxy = "https://corsproxy.io/?";
 
       try {
         const target = `https://api.airplanes.live/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
