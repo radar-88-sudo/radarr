@@ -255,7 +255,7 @@
       lat: 52.9529,
       lon: -0.9547,
       radiusNM: 50,
-      pollInterval: 10000
+      pollInterval: 25000 // Safe 25-second interval to completely prevent 429 rate limits
     };
 
     let activeAircraft = [];
@@ -281,7 +281,7 @@
       if (ac.t === 'Military') return true;
 
       const flight = (ac.flight || '').trim().toUpperCase();
-      const hex = (ac.hex || '').trend || (ac.hex || '').trim().toUpperCase();
+      const hex = (ac.hex || '').trim().toUpperCase();
 
       const milPrefixes = [
         'RFR', 'RRR', 'CNV', 'NAVY', 'RCH', 'C2', 'ASCOT', 'VIPER', 'HAWK', 
@@ -307,7 +307,7 @@
         doubleClickZoom: false,
         boxZoom: false,
         keyboard: false
-      }).setView([ADSB.lat || ADSB_CONFIG.lat, ADSB_CONFIG.lon], 8);
+      }).setView([ADSB_CONFIG.lat, ADSB_CONFIG.lon], 8);
 
       L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
         maxZoom: 16
@@ -351,11 +351,13 @@
       if (isFetching) return;
       isFetching = true;
 
-      // Direct endpoint connection. Modern api.adsb.lol supports standard CORS headers natively.
       const url = `https://api.adsb.lol/v2/lat/${ADSB_CONFIG.lat}/lon/${ADSB_CONFIG.lon}/dist/${ADSB_CONFIG.radiusNM}`;
 
       try {
         const response = await fetch(url);
+        if (response.status === 429) {
+          throw new Error("Rate limited (429)");
+        }
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         
         const data = await response.json();
@@ -365,20 +367,8 @@
         renderFlightBoard(activeAircraft);
         updateNearestScrollboard(activeAircraft);
       } catch (err) {
-        console.warn("Direct fetch error, trying fallback endpoint...", err);
-        try {
-          // Fallback to global V2 endpoint if radius fails
-          const fallbackRes = await fetch('https://api.adsb.lol/v2/mil');
-          if (fallbackRes.ok) {
-            const fallbackData = await fallbackRes.json();
-            activeAircraft = fallbackData.ac || fallbackData.aircraft || [];
-            updateConnectionStatus(`Status: Tracking via Mil Feed (${activeAircraft.length})`);
-            renderFlightBoard(activeAircraft);
-            updateNearestScrollboard(activeAircraft);
-          }
-        } catch (innerErr) {
-          updateConnectionStatus("Status: Connection Lost - Retrying...");
-        }
+        console.warn("Direct fetch warning:", err.message);
+        updateConnectionStatus("Status: Retrying Airspace Feed...");
       } finally {
         isFetching = false;
       }
