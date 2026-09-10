@@ -308,7 +308,7 @@
       L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/dark_nolabels/{z}/{x}/{y}{r}.png', {
         maxZoom: 19,
         subdomains: 'abcd',
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+        attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
       }).addTo(map);
 
       const radiusMeters = userConfig.radiusNM * 1852;
@@ -350,32 +350,32 @@
     async function fetchADSBData() {
       const { lat, lon } = userConfig;
       
-      // Primary Source: ADSB.lol via corsproxy.io
+      // Primary Source: airplanes.live point endpoint (native CORS support)
       try {
-        const targetApi = `https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
-        const res = await fetch(`https://corsproxy.io/?${encodeURIComponent(targetApi)}`);
+        const targetApi = `https://api.airplanes.live/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
+        const res = await fetch(targetApi);
         if (res.ok) {
           const data = await res.json();
           if (data && data.ac) {
-            return { acList: data.ac, source: 'ADSB.lol' };
+            return { acList: data.ac, source: 'Airplanes.live' };
           }
         }
       } catch (e) {
-        console.warn('Primary fetch error:', e);
+        console.warn('Airplanes.live fetch error:', e);
       }
 
-      // Fallback Source: ADSB.fi via corsproxy.io
+      // Fallback Source: ADSB.lol direct endpoint
       try {
-        const altTarget = `https://opendata.adsb.fi/api/v3/lat/${lat.toFixed(4)}/lon/${lon.toFixed(4)}/dist/50`;
-        const res2 = await fetch(`https://corsproxy.io/?${encodeURIComponent(altTarget)}`);
+        const altTarget = `https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
+        const res2 = await fetch(altTarget);
         if (res2.ok) {
           const data2 = await res2.json();
-          if (data2 && data2.aircraft) {
-            return { acList: data2.aircraft, source: 'ADSB.fi' };
+          if (data2 && data2.ac) {
+            return { acList: data2.ac, source: 'ADSB.lol' };
           }
         }
       } catch (e2) {
-        console.warn('Fallback fetch error:', e2);
+        console.warn('ADSB.lol fallback error:', e2);
       }
 
       return null;
