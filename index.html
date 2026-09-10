@@ -99,8 +99,9 @@
       background: #090d16;
     }
 
+    /* Clean dark styling for CartoDB Dark Matter map */
     .leaflet-tile-pane {
-      filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg);
+      filter: brightness(0.9) contrast(1.1);
     }
 
     canvas {
@@ -308,8 +309,10 @@
         keyboard: false
       }).setView([userConfig.lat, userConfig.lon], 8);
 
-      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19
+      // Clean, uncluttered Dark Matter tile layer (no distracting city names or roads)
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19,
+        subdomains: 'abcd'
       }).addTo(map);
 
       const radiusMeters = userConfig.radiusNM * 1852;
@@ -351,8 +354,6 @@
     async function fetchADSBData() {
       const { lat, lon } = userConfig;
       const targetApi = `https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
-      
-      // Using AllOrigins wrapper endpoint which formats data as a safe JSON string object, bypassing browser CORS blocks entirely
       const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetApi)}`;
 
       try {
@@ -370,7 +371,6 @@
         console.warn('Primary proxy fetch error:', e);
       }
 
-      // Secondary fallback endpoint (ADSB.fi raw endpoint)
       try {
         const altTarget = `https://opendata.adsb.fi/api/v3/lat/${lat.toFixed(4)}/lon/${lon.toFixed(4)}/dist/50`;
         const altProxy = `https://api.allorigins.win/get?url=${encodeURIComponent(altTarget)}`;
