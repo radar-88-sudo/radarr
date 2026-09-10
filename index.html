@@ -259,6 +259,7 @@
     let pollTimer = null;
     let activeAircraft = [];
     let map = null;
+    let scopeCircle = null;
     let canvas = null;
     let ctx = null;
     let sweepAngle = 0;
@@ -297,6 +298,12 @@
       return false;
     }
 
+    function fitRadarBounds() {
+      if (map && scopeCircle) {
+        map.fitBounds(scopeCircle.getBounds(), { padding: [2, 2], animate: false });
+      }
+    }
+
     function initMap() {
       map = L.map('map', {
         zoomControl: false,
@@ -306,7 +313,7 @@
         doubleClickZoom: false,
         boxZoom: false,
         keyboard: false
-      }).setView([userConfig.lat, userConfig.lon], 9);
+      });
 
       L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19
@@ -314,7 +321,7 @@
 
       const radiusMeters = userConfig.radiusNM * 1852;
       
-      L.circle([userConfig.lat, userConfig.lon], {
+      scopeCircle = L.circle([userConfig.lat, userConfig.lon], {
         color: '#00ff9d',
         weight: 5,
         opacity: 1.0,
@@ -331,6 +338,8 @@
         fill: false,
         radius: radiusMeters + 1200
       }).addTo(map);
+
+      fitRadarBounds();
     }
 
     function resizeCanvas() {
@@ -343,7 +352,7 @@
 
       if (map) {
         map.invalidateSize();
-        map.setView([userConfig.lat, userConfig.lon], 9);
+        fitRadarBounds();
       }
     }
 
