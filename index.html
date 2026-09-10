@@ -574,14 +574,21 @@
     }
 
     function isMilitary(ac) {
+      const type = (ac.t || '').toUpperCase();
+      const flight = (ac.flight || '').toUpperCase();
+
+      // Explicitly override database flags for known civil types like C56X
+      const forcedCivilianTypes = ['C56X', 'LJ35', 'BE40'];
+      if (forcedCivilianTypes.some(s => type.includes(s))) {
+        return false;
+      }
+
       // Check database flags (dbFlags & 1 indicates military in ADSB.lol / Airplanes.live)
       const dbFlags = ac.dbFlags !== undefined ? ac.dbFlags : (ac.db_flags !== undefined ? ac.db_flags : 0);
       if (dbFlags & 1) {
         return true;
       }
 
-      const type = (ac.t || '').toUpperCase();
-      const flight = (ac.flight || '').toUpperCase();
       const cat = (ac.category || '').toUpperCase();
 
       const civilianExclusions = ['HLE', 'NPAS', 'TRA', 'POL', 'AMB'];
