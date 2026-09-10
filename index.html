@@ -257,6 +257,9 @@
     let ctx = null;
     let sweepAngle = 0;
     let liveAircraft = [];
+    let isFetching = false;
+    let pollIntervalTimer = null;
+    let currentIntervalMs = 15000;
 
     function calcDistanceNM(lat1, lon1, lat2, lon2) {
       const R = 3440.065;
@@ -318,30 +321,73 @@
     }
 
     async function fetchLiveFlights() {
-      const targetApi = `https://api.adsb.lol/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`;
-      const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetApi)}`;
+      if (isFetching) return;
+      isFetching = true;
 
-      try {
-        const response = await fetch(proxyUrl);
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        const text = await response.text();
-        const data = JSON.parse(text);
-        
-        if (data && data.ac) {
-          liveAircraft = data.ac;
-          document.getElementById('connection-status').innerText = `Live Connected (${liveAircraft.length} targets)`;
-          document.getElementById('connection-status').style.color = '#10b981';
-          renderFlightBoard(liveAircraft);
-          updateNearestScrollboard(liveAircraft);
-        } else {
-          liveAircraft = [];
-          document.getElementById('connection-status').innerText = `Live Feed Active (0 targets in range)`;
+      const endpoints = [
+        `https://api.adsb.lol/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`,
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://api.adsb.lol/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`)}`,
+        `https://api.airplanes.live/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`
+      ];
+
+      let success = false;
+
+      for (let url of endpoints) {
+        try {
+          const response = await fetch(url);
+          if (response.status === 429) {
+            console.warn(`Rate limited (429) on endpoint: ${url}`);
+            continue;
+          }
+          if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+          
+          let data;
+          const text = await response.text();
+          try {
+            data = JSON.parse(text);
+            if (data.contents) {
+              data = JSON.parse(data.contents);
+            }
+          } catch (e) {
+            data = JSON.parse(text);
+          }
+
+          if (data && data.ac) {
+            liveAircraft = data.ac;
+            document.getElementById('connection-status').innerText = `Live Connected (${liveAircraft.length} targets)`;
+            document.getElementById('connection-status').style.color = '#10b981';
+            renderFlightBoard(liveAircraft);
+            updateNearestScrollboard(liveAircraft);
+            success = true;
+            
+            // Reset poll interval back to normal on success
+            if (currentIntervalMs !== 15000) {
+              currentIntervalMs = 15000;
+              resetPollingInterval();
+            }
+            break;
+          }
+        } catch (err) {
+          console.warn(`Endpoint try failed (${url}):`, err);
         }
-      } catch (err) {
-        console.warn("Live feed connection issue:", err);
-        document.getElementById('connection-status').innerText = `Feed Reconnecting...`;
-        document.getElementById('connection-status').style.color = '#ef4444';
       }
+
+      if (!success) {
+        // Persist previous targets on screen instead of dropping to 0
+        document.getElementById('connection-status').innerText = `Live Stream Active (Cached - Syncing...)`;
+        document.getElementById('connection-status').style.color = '#f59e0b';
+        
+        // Exponential backoff up to 45s to clear rate limit buffers
+        currentIntervalMs = Math.min(currentIntervalMs * 1.5, 45000);
+        resetPollingInterval();
+      }
+
+      isFetching = false;
+    }
+
+    function resetPollingInterval() {
+      if (pollIntervalTimer) clearInterval(pollIntervalTimer);
+      pollIntervalTimer = setInterval(fetchLiveFlights, currentIntervalMs);
     }
 
     function renderFlightBoard(acList) {
@@ -466,9 +512,9 @@
       
       requestAnimationFrame(drawRadarScope);
       
-      // Pull live data immediately, then poll every 15 seconds to prevent rate-limiting
+      // Pull live data immediately and start robust interval polling
       fetchLiveFlights();
-      setInterval(fetchLiveFlights, 15000);
+      resetPollingInterval();
     });
   </script>
 </body>
