@@ -338,8 +338,8 @@
       return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
-    // Function to fetch real aircraft photo from Planespotters.net API with fallbacks
-    async function fetchAircraftPhoto(hexCode, icaoCode, isMil) {
+    // Updated photo fetcher: Checks Registration (r) first, then falls back to Hex code
+    async function fetchAircraftPhoto(ac, icaoCode, isMil) {
       const logoBox = document.getElementById('sb-logo-box');
       
       if (isMil) {
@@ -347,21 +347,45 @@
         return;
       }
 
-      try {
-        const response = await fetch(`https://api.planespotters.net/pub/photos/hex/${hexCode}`);
-        if (response.ok) {
-          const data = await response.json();
-          if (data.photos && data.photos.length > 0) {
-            const photoUrl = data.photos[0].thumbnail_large.src;
-            logoBox.innerHTML = `<img src="${photoUrl}" alt="Aircraft Photo" title="Photo via Planespotters.net">`;
-            return;
+      let photoUrl = null;
+
+      // 1. Try querying by registration (e.g. G-XXXX)
+      if (ac.r) {
+        try {
+          const res = await fetch(`https://api.planespotters.net/pub/photos/reg/${ac.r}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.photos && data.photos.length > 0) {
+              photoUrl = data.photos[0].thumbnail_large.src;
+            }
           }
+        } catch (err) {
+          console.warn('Photo lookup by registration failed:', err);
         }
-      } catch (err) {
-        console.warn('Could not fetch real aircraft photo:', err);
+      }
+
+      // 2. Fall back to hex code lookup if registration failed or wasn't provided
+      if (!photoUrl && ac.hex) {
+        try {
+          const res = await fetch(`https://api.planespotters.net/pub/photos/hex/${ac.hex}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.photos && data.photos.length > 0) {
+              photoUrl = data.photos[0].thumbnail_large.src;
+            }
+          }
+        } catch (err) {
+          console.warn('Photo lookup by hex failed:', err);
+        }
+      }
+
+      // If photo was successfully found via reg or hex, display it
+      if (photoUrl) {
+        logoBox.innerHTML = `<img src="${photoUrl}" alt="Aircraft Photo" title="Photo via Planespotters.net">`;
+        return;
       }
       
-      // Fallback to airline code logo if no photo is found
+      // Fallback to airline code logo if no individual photo exists
       if (icaoCode) {
         logoBox.innerHTML = `<img src="https://pics.avs.io/al/150/150/${icaoCode}.png" alt="${icaoCode}" onerror="this.onerror=null; this.parentElement.innerHTML='<span class=\\'logo-fallback\\'>${icaoCode}</span>';">`;
       } else {
@@ -578,8 +602,8 @@
       const flightStr = nearest.flight ? nearest.flight.trim() : `ICAO: ${nearest.hex}`;
       const icaoCode = flightStr.length >= 3 ? flightStr.substring(0, 3).toUpperCase() : '';
 
-      // Trigger the real-world aircraft photo lookup
-      fetchAircraftPhoto(nearest.hex, icaoCode, isMilitary(nearest));
+      // Pass the whole aircraft object so reg (r) and hex are available
+      fetchAircraftPhoto(nearest, icaoCode, isMilitary(nearest));
 
       // Metrics & Speed / Height / Distance
       document.getElementById('sb-distance').innerText = `${dist.toFixed(1)} NM`;
