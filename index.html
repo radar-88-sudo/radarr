@@ -251,18 +251,15 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <script>
-    // --- CONFIGURATION & STATE ---
     const ADSB_CONFIG = {
       lat: 52.9529,
       lon: -0.9547,
       radiusNM: 50,
-      pollInterval: 12000, // 12s interval to clear api limits
-      backoffIncrement: 20000 // 20s backoff on HTTP 429
+      pollInterval: 10000
     };
 
     let activeAircraft = [];
     let isFetching = false;
-    let currentBackoff = 0;
     let map = null;
     let canvas = null;
     let ctx = null;
@@ -284,7 +281,7 @@
       if (ac.t === 'Military') return true;
 
       const flight = (ac.flight || '').trim().toUpperCase();
-      const hex = (ac.hex || '').trim().toUpperCase();
+      const hex = (ac.hex || '').trend || (ac.hex || '').trim().toUpperCase();
 
       const milPrefixes = [
         'RFR', 'RRR', 'CNV', 'NAVY', 'RCH', 'C2', 'ASCOT', 'VIPER', 'HAWK', 
@@ -310,7 +307,7 @@
         doubleClickZoom: false,
         boxZoom: false,
         keyboard: false
-      }).setView([ADSB_CONFIG.lat, ADSB_CONFIG.lon], 8);
+      }).setView([ADSB.lat || ADSB_CONFIG.lat, ADSB_CONFIG.lon], 8);
 
       L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
         maxZoom: 16
@@ -350,55 +347,41 @@
       }
     }
 
-    // --- FETCH DATA WITH WORKING PROXIES & BACKOFF ---
     async function fetchADSBData() {
-      if (isFetching) return null;
+      if (isFetching) return;
       isFetching = true;
 
-      const directUrl = `https://api.adsb.lol/v2/lat/${ADSB_CONFIG.lat}/lon/${ADSB_CONFIG.lon}/dist/${ADSB_CONFIG.radiusNM}`;
-      
-      const endpoints = [
-        directUrl,
-        `https://thingproxy.freeboard.io/fetch/${directUrl}`,
-        `https://api.allorigins.win/raw?url=${encodeURIComponent(directUrl)}`
-      ];
+      // Direct endpoint connection. Modern api.adsb.lol supports standard CORS headers natively.
+      const url = `https://api.adsb.lol/v2/lat/${ADSB_CONFIG.lat}/lon/${ADSB_CONFIG.lon}/dist/${ADSB_CONFIG.radiusNM}`;
 
-      let data = null;
-
-      for (const url of endpoints) {
-        try {
-          const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
-
-          if (res.status === 429) {
-            console.warn('Rate limit hit (429). Increasing delay...');
-            currentBackoff = ADSB_CONFIG.backoffIncrement;
-            updateConnectionStatus('Status: Rate Limited (429). Backing off...');
-            break;
-          }
-
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-          data = await res.json();
-          currentBackoff = 0; // Reset backoff on success
-          break;
-
-        } catch (err) {
-          console.warn(`Endpoint failed (${url}):`, err.message);
-        }
-      }
-
-      isFetching = false;
-
-      if (data) {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        
+        const data = await response.json();
         activeAircraft = data.ac || data.aircraft || [];
-        updateConnectionStatus(`Status: Tracking ${activeAircraft.length} Aircraft`);
+        
+        updateConnectionStatus(`Status: Tracking ${activeAircraft.length} targets`);
         renderFlightBoard(activeAircraft);
         updateNearestScrollboard(activeAircraft);
-      } else {
-        updateConnectionStatus('Status: Retrying Airspace Connection...');
+      } catch (err) {
+        console.warn("Direct fetch error, trying fallback endpoint...", err);
+        try {
+          // Fallback to global V2 endpoint if radius fails
+          const fallbackRes = await fetch('https://api.adsb.lol/v2/mil');
+          if (fallbackRes.ok) {
+            const fallbackData = await fallbackRes.json();
+            activeAircraft = fallbackData.ac || fallbackData.aircraft || [];
+            updateConnectionStatus(`Status: Tracking via Mil Feed (${activeAircraft.length})`);
+            renderFlightBoard(activeAircraft);
+            updateNearestScrollboard(activeAircraft);
+          }
+        } catch (innerErr) {
+          updateConnectionStatus("Status: Connection Lost - Retrying...");
+        }
+      } finally {
+        isFetching = false;
       }
-
-      return data;
     }
 
     function updateConnectionStatus(msg) {
@@ -411,14 +394,14 @@
       if (!gridEl) return;
       gridEl.innerHTML = '';
 
-      const militaryValid = acList.filter(ac => 
-        ac.lat && ac.lon && 
-        calcDistanceNM(ADSB_CONFIG.lat, ADSB_CONFIG.lon, ac.lat, ac.lon) <= ADSB_CONFIG.radiusNM &&
-        isMilitaryAircraft(ac)
-      );
+      const militaryValid = acList.filter(ac => {
+        if (!ac.lat || !ac.lon) return false;
+        const dist = calcDistanceNM(ADSB_CONFIG.lat, ADSB_CONFIG.lon, ac.lat, ac.lon);
+        return dist <= ADSB_CONFIG.radiusNM && isMilitaryAircraft(ac);
+      });
 
       if (militaryValid.length === 0) {
-        gridEl.innerHTML = '<div style="color: var(--text-dim); font-size: 0.85rem;">No military flights detected</div>';
+        gridEl.innerHTML = '<div style="color: var(--text-dim); font-size: 0.85rem;">No military flights detected in 50 NM</div>';
         return;
       }
 
@@ -477,7 +460,6 @@
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       const centerPoint = map.latLngToContainerPoint([ADSB_CONFIG.lat, ADSB_CONFIG.lon]);
-
       const outerEdgeLatLng = [ADSB_CONFIG.lat + 0.833, ADSB_CONFIG.lon];
       const outerEdgePoint = map.latLngToContainerPoint(outerEdgeLatLng);
       const radiusPx = Math.abs(centerPoint.y - outerEdgePoint.y);
@@ -538,14 +520,10 @@
       requestAnimationFrame(drawRadarScope);
     }
 
-    // --- RECURSIVE POLLING LOOP ---
     function pollADSB() {
-      const nextDelay = ADSB_CONFIG.pollInterval + currentBackoff;
-
-      setTimeout(async () => {
+      setInterval(async () => {
         await fetchADSBData();
-        pollADSB();
-      }, nextDelay);
+      }, ADSB_CONFIG.pollInterval);
     }
 
     window.addEventListener('load', () => {
