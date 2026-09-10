@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Pi 400 Airspace Scope</title>
+  <title>GitHub Pages Airspace Scope</title>
   
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
@@ -213,7 +213,7 @@
 <body>
 
   <header>
-    <h1><span class="pulse-dot"></span> Pi 400 Airspace Scope (50 NM)</h1>
+    <h1><span class="pulse-dot"></span> Airspace Scope (50 NM) - GitHub Host</h1>
     <div id="connection-status" style="font-size: 0.85rem; color: var(--text-dim);">Status: Initializing...</div>
   </header>
 
@@ -350,27 +350,42 @@
 
     async function fetchADSBData() {
       const { lat, lon } = userConfig;
+      const targetApi = `https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
+      
+      // Using AllOrigins wrapper endpoint which formats data as a safe JSON string object, bypassing browser CORS blocks entirely
+      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetApi)}`;
 
-      // Use AllOrigins JSON endpoint wrappers which successfully bypass strict CORS & WAF limits
-      const endpoints = [
-        `https://api.allorigins.win/get?url=${encodeURIComponent(`https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`)}`,
-        `https://api.allorigins.win/get?url=${encodeURIComponent(`https://api.airplanes.live/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`)}`
-      ];
-
-      for (const endpoint of endpoints) {
-        try {
-          const res = await fetch(endpoint);
-          if (res.ok) {
-            const wrapper = await res.json();
-            if (wrapper && wrapper.contents) {
-              const data = JSON.parse(wrapper.contents);
-              if (data && data.ac) {
-                const sourceName = endpoint.includes('adsb.lol') ? 'ADSB.lol' : 'Airplanes.live';
-                return { acList: data.ac, source: sourceName };
-              }
+      try {
+        const res = await fetch(proxyUrl);
+        if (res.ok) {
+          const wrapper = await res.json();
+          if (wrapper && wrapper.contents) {
+            const data = JSON.parse(wrapper.contents);
+            if (data && data.ac) {
+              return { acList: data.ac, source: 'ADSB.lol (Via AllOrigins)' };
             }
           }
-        } catch (e) {}
+        }
+      } catch (e) {
+        console.warn('Primary proxy fetch error:', e);
+      }
+
+      // Secondary fallback endpoint (ADSB.fi raw endpoint)
+      try {
+        const altTarget = `https://opendata.adsb.fi/api/v3/lat/${lat.toFixed(4)}/lon/${lon.toFixed(4)}/dist/50`;
+        const altProxy = `https://api.allorigins.win/get?url=${encodeURIComponent(altTarget)}`;
+        const res2 = await fetch(altProxy);
+        if (res2.ok) {
+          const wrapper2 = await res2.json();
+          if (wrapper2 && wrapper2.contents) {
+            const data2 = JSON.parse(wrapper2.contents);
+            if (data2 && data2.aircraft) {
+              return { acList: data2.aircraft, source: 'ADSB.fi (Via AllOrigins)' };
+            }
+          }
+        }
+      } catch (e2) {
+        console.warn('Fallback proxy fetch error:', e2);
       }
 
       return null;
