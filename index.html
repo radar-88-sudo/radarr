@@ -154,7 +154,6 @@
       align-items: center;
     }
 
-    /* Dense, space-efficient bottom banner */
     footer {
       height: 120px;
       background: rgba(15, 23, 42, 0.98);
@@ -314,12 +313,10 @@
 
   <footer>
     <div class="scrollboard">
-      <!-- Column 1: Aircraft Photo / Logo -->
       <div class="logo-container" id="sb-logo-box">
         <span class="logo-fallback" id="sb-logo-text">--</span>
       </div>
 
-      <!-- Column 2: Callsign & Route -->
       <div class="banner-col">
         <div id="sb-airline" class="airline-heading">AWAITING LOCK</div>
         <div id="sb-type" class="aircraft-meta">Type: --</div>
@@ -335,7 +332,6 @@
         </div>
       </div>
 
-      <!-- Column 3: Distance from You & Position -->
       <div class="banner-col metric-group">
         <div class="sub-title">Distance From You</div>
         <div id="sb-distance" class="primary-metric">-- NM</div>
@@ -343,7 +339,6 @@
         <div id="sb-speed" class="secondary-metric">Speed: -- kts</div>
       </div>
 
-      <!-- Column 4: Flight Dynamics & Codes -->
       <div class="banner-col metric-group">
         <div id="sb-rate" class="secondary-metric" style="font-weight: 700;">Rate: --</div>
         <div id="sb-heading" class="secondary-metric" style="font-size:0.85rem; color:var(--text-dim);">Heading: --°</div>
@@ -578,6 +573,31 @@
       }
     }
 
+    function isMilitary(ac) {
+      const type = (ac.t || '').toUpperCase();
+      const flight = (ac.flight || '').toUpperCase();
+      const cat = (ac.category || '').toUpperCase();
+
+      const civilianExclusions = ['HLE', 'NPAS', 'TRA', 'POL', 'AMB'];
+      if (civilianExclusions.some(prefix => flight.startsWith(prefix))) {
+        return false;
+      }
+
+      if (cat === 'A7') return true;
+
+      const milTypes = ['F16', 'F15', 'F18', 'F35', 'F22', 'EF20', 'EUFI', 'TOR', 'HAWK', 'A10', 'C130', 'C17', 'A400', 'K35R', 'E3TF', 'V22', 'CH47', 'AH64', 'UH60', 'NH90', 'TYPH', 'T38', 'T6', 'P8', 'RC135', 'C5', 'KC135'];
+      if (milTypes.some(s => type.includes(s))) {
+        return true;
+      }
+
+      const milPrefixes = ['RRR', 'ASCOT', 'SHF', 'VORTEX', 'RCH', 'DUKE', 'BOOM', 'REACH', 'CNV', 'GUN', 'GUNF', 'GUNFTR', 'VIPER', 'DEVIL', 'PYTHON', 'BOLT', 'SHARK', 'GHOST', 'SALTY'];
+      if (milPrefixes.some(prefix => flight.startsWith(prefix))) {
+        return true;
+      }
+
+      return false;
+    }
+
     function getAircraftCategory(ac) {
       const type = (ac.t || '').toUpperCase();
       const cat = (ac.category || '').toUpperCase();
@@ -585,7 +605,7 @@
       if (cat.startsWith('H') || ['R44', 'R22', 'EC35', 'H135', 'H145', 'B06', 'AS35', 'S76', 'AW13', 'A169'].some(s => type.includes(s))) {
         return 'HELICOPTER';
       }
-      if (['F16', 'F15', 'F18', 'EUT', 'TOR', 'HAWK', 'A10', 'C130', 'C17', 'TYPH', 'A400', 'E3TF', 'K35R', 'CH47', 'AH64', 'UH60', 'NH90'].some(s => type.includes(s)) || cat === 'A7') {
+      if (isMilitary(ac) || ['F16', 'F15', 'F18', 'EUT', 'EUFI', 'TOR', 'HAWK', 'A10', 'C130', 'C17', 'TYPH', 'A400', 'E3TF', 'K35R', 'CH47', 'AH64', 'UH60', 'NH90', 'F35', 'F22'].some(s => type.includes(s)) || cat === 'A7') {
         return 'FIGHTER_MILITARY';
       }
       if (['GLF', 'CL3', 'CL6', 'LJ', 'FA7', 'PRM', 'E55', 'H25B', 'C56X', 'LJ35', 'BE40'].some(s => type.includes(s)) || cat === 'A4') {
@@ -607,26 +627,6 @@
         return 'LIGHT';
       }
       return 'NARROWBODY';
-    }
-
-    function isMilitary(ac) {
-      const type = (ac.t || '').toUpperCase();
-      const flight = (ac.flight || '').toUpperCase();
-      const cat = (ac.category || '').toUpperCase();
-
-      const civilianExclusions = ['HLE', 'NPAS', 'TRA', 'POL', 'AMB'];
-      if (civilianExclusions.some(prefix => flight.startsWith(prefix))) {
-        return false;
-      }
-
-      if (cat === 'A7') return true;
-      if (['F16', 'F15', 'F18', 'F35', 'F22', 'EF20', 'TOR', 'HAWK', 'A10', 'C130', 'C17', 'A400', 'K35R', 'E3TF', 'V22', 'CH47', 'AH64', 'UH60', 'NH90', 'TYPH'].some(s => type.includes(s))) {
-        return true;
-      }
-      if (['RRR', 'ASCOT', 'SHF', 'VORTEX', 'RCH', 'DUKE', 'BOOM', 'REACH', 'CNV'].some(prefix => flight.startsWith(prefix))) {
-        return true;
-      }
-      return false;
     }
 
     function renderFlightBoard(acList) {
@@ -662,9 +662,8 @@
 
     function resolveFlightRoute(flightStr, ac) {
       const callsign = (flightStr || '').toUpperCase().trim();
-      const prefix = callsign.length >= 3 ? callsign.substring(0, 3) : '';
       
-      if (['RRR', 'ASCOT', 'SHF', 'VORTEX', 'RCH', 'DUKE', 'BOOM', 'REACH'].some(p => callsign.startsWith(p))) {
+      if (isMilitary(ac)) {
         const milBases = ['EGVN', 'EGUN', 'EGYM', 'EGDL', 'EGVA', 'EGNX'];
         const hash = parseInt(ac.hex, 16) || 0;
         const from = milBases[hash % milBases.length];
@@ -673,6 +672,7 @@
         return { fromCode: from, toCode: to };
       }
 
+      const prefix = callsign.length >= 3 ? callsign.substring(0, 3) : '';
       const airlineRoutes = {
         'BAW': { from: 'EGLL', to: 'EHAM' },
         'EZY': { from: 'EGNX', to: 'LFPG' },
