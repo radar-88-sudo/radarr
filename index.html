@@ -97,7 +97,6 @@
       height: 100%;
       z-index: 1;
       background: #090d16;
-      filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg); /* Dark-mode effect for standard OSM */
     }
 
     canvas {
@@ -259,7 +258,6 @@
     let canvas = null;
     let ctx = null;
     let sweepAngle = 0;
-    let nextPollDelayMs = 15000;
 
     function calcDistanceNM(lat1, lon1, lat2, lon2) {
       const R = 3440.065;
@@ -305,9 +303,9 @@
         keyboard: false
       }).setView([userConfig.lat, userConfig.lon], 8);
 
-      // OpenStreetMap with dark CSS filter (Free, no API key)
-      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19
+      // Using Esri Dark Canvas (100% Free, No API key required)
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 16
       }).addTo(map);
 
       const radiusMeters = userConfig.radiusNM * 1852;
@@ -344,36 +342,40 @@
       }
     }
 
-    async function fetchADSBData() {
-      const { lat, lon } = userConfig;
-      const targetUrl = `https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
-      
-      // Use reliable CORS proxy
-      const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+    // Direct JSONP call (Bypasses CORS entirely without third-party proxies)
+    function fetchADSBData() {
+      return new Promise((resolve) => {
+        const callbackName = 'adsb_cb_' + Math.floor(Math.random() * 1000000);
+        const script = document.createElement('script');
+        
+        const timeout = setTimeout(() => {
+          cleanup();
+          resolve(null);
+        }, 8000);
 
-      try {
-        const res = await fetch(proxyUrl);
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.ac) return { acList: data.ac, source: 'ADSB.lol' };
+        function cleanup() {
+          clearTimeout(timeout);
+          delete window[callbackName];
+          if (script.parentNode) script.parentNode.removeChild(script);
         }
-      } catch (e) {
-        console.warn("Proxy 1 failed, trying fallback...");
-      }
 
-      // Backup endpoint
-      try {
-        const fallbackUrl = `https://corsproxy.io/?${encodeURIComponent(`https://api.adsb.fi/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`)}`;
-        const res = await fetch(fallbackUrl);
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.ac) return { acList: data.ac, source: 'ADSB.fi' };
-        }
-      } catch (e) {
-        console.error("All fetch attempts failed.");
-      }
+        window[callbackName] = function(data) {
+          cleanup();
+          if (data && data.ac) {
+            resolve({ acList: data.ac, source: 'ADSB.lol' });
+          } else {
+            resolve(null);
+          }
+        };
 
-      return null;
+        script.src = `https://api.adsb.lol/v2/point/${userConfig.lat.toFixed(4)}/${userConfig.lon.toFixed(4)}/50?callback=${callbackName}`;
+        script.onerror = () => {
+          cleanup();
+          resolve(null);
+        };
+
+        document.head.appendChild(script);
+      });
     }
 
     async function pollADSB() {
@@ -384,18 +386,16 @@
       const result = await fetchADSBData();
 
       if (result && result.acList) {
-        nextPollDelayMs = 15000;
         activeAircraft = result.acList;
         if (statusEl) statusEl.textContent = `Status: Tracking ${activeAircraft.length} Aircraft (${result.source})`;
       } else {
-        nextPollDelayMs = 20000;
-        if (statusEl) statusEl.textContent = 'Status: Connection Retrying...';
+        if (statusEl) statusEl.textContent = 'Status: Retrying Airspace Connection...';
       }
 
       renderFlightBoard(activeAircraft);
       updateNearestScrollboard(activeAircraft);
 
-      pollTimer = setTimeout(pollADSB, nextPollDelayMs);
+      pollTimer = setTimeout(pollADSB, 10000);
     }
 
     function renderFlightBoard(acList) {
