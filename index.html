@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Live ADSB Airspace Scope (15.6" Kiosk Mode)</title>
+  <title>Live ADSB Airspace Scope (15.6" Wall Board)</title>
   
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
@@ -31,6 +31,7 @@
       overflow: hidden;
       display: flex;
       flex-direction: column;
+      touch-action: none; /* Prevents browser pinch-zoom on touch screens */
     }
 
     header {
@@ -88,6 +89,7 @@
       overflow: hidden;
       height: 100%;
       width: 100%;
+      touch-action: none; /* Completely locks touch scaling */
     }
 
     #map {
@@ -98,6 +100,7 @@
       height: 100%;
       z-index: 1;
       filter: brightness(0.6) contrast(1.2) hue-rotate(180deg);
+      pointer-events: none; /* Blocks all mouse/touch interaction with the map tiles */
     }
 
     canvas {
@@ -145,7 +148,6 @@
       padding-right: 4px;
     }
 
-    /* Compact side-by-side card layout tailored for 15.6" screens */
     .ac-card {
       background: rgba(30, 41, 59, 0.7);
       border: 1px solid rgba(255, 255, 255, 0.08);
@@ -309,7 +311,7 @@
 <body>
 
   <header>
-    <h1><span class="pulse-dot"></span> Live ADSB Radar Scope (15.6" Locked Mode)</h1>
+    <h1><span class="pulse-dot"></span> Live ADSB Radar Scope (50 NM Wall Board)</h1>
     <div style="display: flex; align-items: center; gap: 0.75rem;">
       <div id="audio-indicator" style="background: rgba(30, 41, 59, 0.9); border: 1px solid var(--accent-green); color: var(--accent-green); padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.7rem; font-weight: 600;">🔊 Audio: ACTIVE</div>
       <div id="connection-status" style="font-size: 0.75rem; color: var(--accent-blue);">Initializing Feed...</div>
@@ -381,6 +383,7 @@
     let liveAircraft = [];
     let lockedAircraft = null;
     let isFetching = false;
+    let radarCircle = null;
     const aircraftTrails = {};
 
     const audioAlertsEnabled = true;
@@ -562,7 +565,7 @@
     }
 
     function initMap() {
-      // Map and zoom fully locked down for 15.6" kiosk usage
+      // Initialize map with all interactive controls completely disabled
       map = L.map('map', {
         zoomControl: false,
         attributionControl: false,
@@ -572,19 +575,24 @@
         boxZoom: false,
         keyboard: false,
         touchZoom: false,
-        tap: false,
-        minZoom: 8,
-        maxZoom: 8
+        tap: false
       }).setView([userConfig.lat, userConfig.lon], 8);
 
+      // Explicitly call .disable() on all map handlers to guarantee no zoom/pan
+      map.dragging.disable();
+      map.touchZoom.disable();
+      map.doubleClickZoom.disable();
+      map.scrollWheelZoom.disable();
+      map.boxZoom.disable();
+      map.keyboard.disable();
+      if (map.tap) map.tap.disable();
+
       L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        minZoom: 8,
-        maxZoom: 8,
         attribution: '&copy; OpenStreetMap contributors'
       }).addTo(map);
 
       const radiusMeters = userConfig.radiusNM * 1852;
-      const circle = L.circle([userConfig.lat, userConfig.lon], {
+      radarCircle = L.circle([userConfig.lat, userConfig.lon], {
         color: '#059669',
         weight: 3,
         opacity: 0.9,
@@ -593,7 +601,7 @@
         radius: radiusMeters
       }).addTo(map);
 
-      map.fitBounds(circle.getBounds(), { padding: [10, 10] });
+      map.fitBounds(radarCircle.getBounds(), { padding: [15, 15] });
     }
 
     function resizeCanvas() {
@@ -602,7 +610,10 @@
       const rect = container.getBoundingClientRect();
       canvas.width = rect.width;
       canvas.height = rect.height;
-      if (map) map.invalidateSize();
+      if (map && radarCircle) {
+        map.invalidateSize();
+        map.fitBounds(radarCircle.getBounds(), { padding: [15, 15] });
+      }
     }
 
     async function fetchLiveFlights() {
