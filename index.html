@@ -255,7 +255,6 @@
     let pollTimer = null;
     let activeAircraft = [];
     let map = null;
-    let scopeCircle = null;
     let canvas = null;
     let ctx = null;
     let sweepAngle = 0;
@@ -294,19 +293,6 @@
       return false;
     }
 
-    function fitRadarBounds() {
-      if (map && scopeCircle) {
-        try {
-          const bounds = scopeCircle.getBounds();
-          if (bounds && bounds.isValid()) {
-            map.fitBounds(bounds, { padding: [2, 2], animate: false });
-          }
-        } catch (e) {
-          console.warn("Bounds fit deferred until map ready.");
-        }
-      }
-    }
-
     function initMap() {
       map = L.map('map', {
         zoomControl: false,
@@ -325,7 +311,7 @@
 
       const radiusMeters = userConfig.radiusNM * 1852;
       
-      scopeCircle = L.circle([userConfig.lat, userConfig.lon], {
+      L.circle([userConfig.lat, userConfig.lon], {
         color: '#00ff9d',
         weight: 5,
         opacity: 1.0,
@@ -342,10 +328,6 @@
         fill: false,
         radius: radiusMeters + 1200
       }).addTo(map);
-
-      map.whenReady(() => {
-        fitRadarBounds();
-      });
     }
 
     function resizeCanvas() {
@@ -358,7 +340,6 @@
 
       if (map) {
         map.invalidateSize();
-        fitRadarBounds();
       }
     }
 
