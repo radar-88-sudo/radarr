@@ -349,33 +349,42 @@
 
     async function fetchADSBData() {
       const { lat, lon } = userConfig;
-      
-      // Attempt 1: Fetch Airplanes.live via raw proxy bypass
-      try {
-        const targetUrl = `https://api.airplanes.live/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
-        const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.ac) {
-            return { acList: data.ac, source: 'Airplanes.live' };
-          }
-        }
-      } catch (e) {
-        console.warn('Airplanes.live proxy fetch warning:', e);
-      }
+      const targetUrl1 = `https://api.airplanes.live/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
+      const targetUrl2 = `https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
 
-      // Attempt 2: Fallback to ADSB.lol via raw proxy bypass
-      try {
-        const targetUrl2 = `https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
-        const res2 = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl2)}`);
-        if (res2.ok) {
-          const data2 = await res2.json();
-          if (data2 && data2.ac) {
-            return { acList: data2.ac, source: 'ADSB.lol' };
+      // Multi-proxy strategy to prevent single proxy blocks/HTML errors
+      const proxyBuilders = [
+        (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+        (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+        (url) => `https://proxy.corsfix.com/?${url}`
+      ];
+
+      const endpoints = [
+        { url: targetUrl1, source: 'Airplanes.live' },
+        { url: targetUrl2, source: 'ADSB.lol' }
+      ];
+
+      for (const endpoint of endpoints) {
+        for (const buildProxyUrl of proxyBuilders) {
+          try {
+            const proxyUrl = buildProxyUrl(endpoint.url);
+            const res = await fetch(proxyUrl);
+            if (!res.ok) continue;
+
+            const text = await res.text();
+            // Strict check: if proxy returns an HTML block/error page instead of JSON, skip it
+            if (!text || text.trim().startsWith('<')) {
+              continue;
+            }
+
+            const data = JSON.parse(text);
+            if (data && data.ac) {
+              return { acList: data.ac, source: endpoint.source };
+            }
+          } catch (err) {
+            // Silently try the next proxy option
           }
         }
-      } catch (e2) {
-        console.warn('ADSB.lol proxy fetch warning:', e2);
       }
 
       return null;
