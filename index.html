@@ -179,25 +179,6 @@
       gap: 1.25rem;
     }
 
-    .photo-section {
-      width: 160px;
-      height: 100px;
-      border-radius: 8px;
-      overflow: hidden;
-      background: #090d16;
-      border: 1px solid var(--card-border);
-      flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .photo-section img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-
     .info-section {
       flex: 1;
       display: flex;
@@ -257,10 +238,6 @@
 
   <footer>
     <div class="scrollboard">
-      <div class="photo-section">
-        <img id="sb-photo" src="https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?auto=format&fit=crop&w=300&q=80" alt="Aircraft Silhouette" onerror="this.src='https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?auto=format&fit=crop&w=300&q=80'">
-      </div>
-
       <div class="info-section">
         <div id="sb-airline" class="airline-heading">Searching Airspace Target...</div>
         <div id="sb-type" style="font-size: 0.85rem; color: var(--text-dim);">Type: --</div>
@@ -286,9 +263,6 @@
     let ctx = null;
     let sweepAngle = 0;
     let nextPollDelayMs = 20000;
-    let currentTrackedKey = null;
-
-    const GENERIC_AIRCRAFT_IMAGE = 'https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?auto=format&fit=crop&w=300&q=80';
 
     function calcDistanceNM(lat1, lon1, lat2, lon2) {
       const R = 3440.065;
@@ -301,6 +275,7 @@
     }
 
     function isMilitaryAircraft(ac) {
+      // Direct API database flags
       if (ac.dbFlags !== undefined && (ac.dbFlags & 1) !== 0) return true;
       if (ac.mil === true || ac.mil === 1) return true;
       if (ac.t === 'Military') return true;
@@ -308,6 +283,7 @@
       const flight = (ac.flight || '').trim().toUpperCase();
       const hex = (ac.hex || '').trim().toUpperCase();
 
+      // Common military callsign prefixes & flight identifiers
       const milPrefixes = [
         'RFR', 'RRR', 'CNV', 'NAVY', 'RCH', 'C2', 'ASCOT', 'VIPER', 'HAWK', 
         'Sentry', 'REACH', 'VALKER', 'FORCE', 'JAKE', 'TOPCAT', 'BOEING',
@@ -315,9 +291,11 @@
       ];
       if (milPrefixes.some(p => flight.startsWith(p))) return true;
 
+      // Common military type designations
       const milTypes = ['A400', 'C17', 'C130', 'A332', 'P8', 'KC135', 'E3TF', 'T45', 'F16', 'F35', 'TYPH'];
       if (ac.t && milTypes.some(type => ac.t.toUpperCase().includes(type))) return true;
 
+      // UK/NATO military hex block ranges (e.g., 43Cxxx for RAF, AE/AE1/AE2 for US Mil)
       if (hex.startsWith('43C') || hex.startsWith('AE') || hex.startsWith('3E8') || hex.startsWith('3FA')) return true;
 
       return false;
@@ -434,10 +412,10 @@
         nextPollDelayMs = 30000;
         if (statusEl) statusEl.textContent = 'Status: Rate Limited - Backing off (Retrying in 30s)';
         activeAircraft = [
-          { flight: 'EZY1842', hex: '406a12', reg: 'G-EZWJ', lat: userConfig.lat + 0.18, lon: userConfig.lon - 0.22, alt_baro: 18500, gs: 340, t: 'A320', dbFlags: 0 },
-          { flight: 'RFR7111', hex: '43c6f2', reg: 'ZM418', lat: userConfig.lat - 0.15, lon: userConfig.lon + 0.12, alt_baro: 12000, gs: 280, t: 'A400M', dbFlags: 1 },
-          { flight: 'BAW274', hex: '400d5a', reg: 'G-VIIU', lat: userConfig.lat - 0.31, lon: userConfig.lon + 0.25, alt_baro: 32000, gs: 450, t: 'B772', dbFlags: 0 },
-          { flight: 'CNV404', hex: '157812', reg: '165812', lat: userConfig.lat + 0.10, lon: userConfig.lon - 0.08, alt_baro: 21000, gs: 310, t: 'C17', dbFlags: 1 }
+          { flight: 'EZY1842', hex: '406a12', lat: userConfig.lat + 0.18, lon: userConfig.lon - 0.22, alt_baro: 18500, gs: 340, t: 'A320', dbFlags: 0 },
+          { flight: 'RFR7111', hex: '43c6f2', lat: userConfig.lat - 0.15, lon: userConfig.lon + 0.12, alt_baro: 12000, gs: 280, t: 'A400M', dbFlags: 1 },
+          { flight: 'BAW274', hex: '400d5a', lat: userConfig.lat - 0.31, lon: userConfig.lon + 0.25, alt_baro: 32000, gs: 450, t: 'B772', dbFlags: 0 },
+          { flight: 'CNV404', hex: '157812', lat: userConfig.lat + 0.10, lon: userConfig.lon - 0.08, alt_baro: 21000, gs: 310, t: 'C17', dbFlags: 1 }
         ];
       }
 
@@ -465,7 +443,7 @@
 
       militaryValid.forEach(ac => {
         const flightName = ac.flight ? ac.flight.trim() : (ac.hex ? ac.hex.toUpperCase() : 'N/A');
-        const planeType = ac.t || ac.type || 'MIL';
+        const planeType = ac.t || 'MIL';
         const alt = ac.alt_baro || ac.alt_geom || 0;
         const speed = ac.gs ? `${Math.round(ac.gs)} kts` : 'N/A';
         const dist = calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon);
@@ -486,67 +464,6 @@
       });
     }
 
-    async function updateAircraftPhoto(ac) {
-      const imgEl = document.getElementById('sb-photo');
-      if (!imgEl || !ac) return;
-
-      const reg = (ac.reg || '').trim();
-      const hex = (ac.hex || '').trim();
-      const trackKey = `${reg}_${hex}`;
-
-      if (trackKey === currentTrackedKey) return;
-      currentTrackedKey = trackKey;
-
-      // 1. Fetch exact photo by Registration via Planespotters API
-      if (reg) {
-        try {
-          const res = await fetch(`https://api.planespotters.net/pub/photos/reg/${encodeURIComponent(reg)}`);
-          if (res.ok) {
-            const data = await res.json();
-            if (data && data.photos && data.photos.length > 0) {
-              imgEl.src = data.photos[0].thumbnail_large.src;
-              return;
-            }
-          }
-        } catch (e) {}
-      }
-
-      // 2. Fallback to Planespotters API via Hex code
-      if (hex) {
-        try {
-          const res = await fetch(`https://api.planespotters.net/pub/photos/hex/${encodeURIComponent(hex)}`);
-          if (res.ok) {
-            const data = await res.json();
-            if (data && data.photos && data.photos.length > 0) {
-              imgEl.src = data.photos[0].thumbnail_large.src;
-              return;
-            }
-          }
-        } catch (e) {}
-      }
-
-      // 3. Fallback to Wikimedia Commons search by exact tail registration
-      if (reg) {
-        try {
-          const query = encodeURIComponent(`"${reg}" aircraft`);
-          const res = await fetch(`https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${query}&gsrnamespace=6&gsrlimit=1&prop=imageinfo&iiprop=url&iiurlwidth=320&format=json&origin=*`);
-          if (res.ok) {
-            const data = await res.json();
-            if (data && data.query && data.query.pages) {
-              const pages = Object.values(data.query.pages);
-              if (pages.length > 0 && pages[0].imageinfo && pages[0].imageinfo[0]) {
-                imgEl.src = pages[0].imageinfo[0].thumburl || pages[0].imageinfo[0].url;
-                return;
-              }
-            }
-          }
-        } catch (e) {}
-      }
-
-      // Final fallback image if no tail photo exists
-      imgEl.src = GENERIC_AIRCRAFT_IMAGE;
-    }
-
     function updateNearestScrollboard(acList) {
       const valid = acList.filter(ac => ac.lat && ac.lon && calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon) <= 50);
       if (valid.length === 0) return;
@@ -561,10 +478,8 @@
       document.getElementById('sb-alt').innerText = `Alt: ${nearest.alt_baro || 0} ft`;
       document.getElementById('sb-speed').innerText = `Speed: ${Math.round(nearest.gs || 0)} kts`;
       document.getElementById('sb-airline').innerText = callsign;
-      document.getElementById('sb-type').innerText = `Type: ${nearest.t || nearest.type || 'N/A'}`;
+      document.getElementById('sb-type').innerText = `Type: ${nearest.t || 'N/A'}`;
       document.getElementById('sb-route').innerText = `Target Lat/Lon: ${nearest.lat.toFixed(2)}°, ${nearest.lon.toFixed(2)}°`;
-
-      updateAircraftPhoto(nearest);
     }
 
     function drawRadarScope() {
