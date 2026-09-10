@@ -262,7 +262,7 @@
     let canvas = null;
     let ctx = null;
     let sweepAngle = 0;
-    let nextPollDelayMs = 25000;
+    let nextPollDelayMs = 15000;
 
     function calcDistanceNM(lat1, lon1, lat2, lon2) {
       const R = 3440.065;
@@ -350,20 +350,21 @@
 
     async function fetchADSBData() {
       const { lat, lon } = userConfig;
-      const proxy = "https://api.allorigins.win/raw?url=";
 
+      // Primary Direct Source (ADSB.one allows browser fetch directly without CORS blocks)
       try {
-        const target = `https://api.airplanes.live/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
-        const res = await fetch(proxy + encodeURIComponent(target));
+        const target = `https://api.adsb.one/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
+        const res = await fetch(target);
         if (res.ok) {
           const data = await res.json();
-          if (data && data.ac) return { acList: data.ac, source: 'Airplanes.live' };
+          if (data && data.ac) return { acList: data.ac, source: 'ADSB.one' };
         }
       } catch (e) {}
 
+      // Backup Source
       try {
         const target = `https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
-        const res = await fetch(proxy + encodeURIComponent(target));
+        const res = await fetch(target);
         if (res.ok) {
           const data = await res.json();
           if (data && data.ac) return { acList: data.ac, source: 'ADSB.lol' };
@@ -381,12 +382,12 @@
       const result = await fetchADSBData();
 
       if (result && result.acList.length > 0) {
-        nextPollDelayMs = 25000;
+        nextPollDelayMs = 15000;
         activeAircraft = result.acList;
         if (statusEl) statusEl.textContent = `Status: Tracking ${activeAircraft.length} Aircraft (${result.source})`;
       } else {
-        nextPollDelayMs = 35000;
-        if (statusEl) statusEl.textContent = 'Status: Network Delay - Retrying in 35s';
+        nextPollDelayMs = 25000;
+        if (statusEl) statusEl.textContent = 'Status: Quiet Airspace - Retrying in 25s';
       }
 
       renderFlightBoard(activeAircraft);
@@ -436,7 +437,15 @@
 
     function updateNearestScrollboard(acList) {
       const valid = acList.filter(ac => ac.lat && ac.lon && calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon) <= 50);
-      if (valid.length === 0) return;
+      if (valid.length === 0) {
+        document.getElementById('sb-airline').innerText = "Scanning Active Airspace...";
+        document.getElementById('sb-type').innerText = "Type: --";
+        document.getElementById('sb-route').innerText = "Location: Waiting for target...";
+        document.getElementById('sb-distance').innerText = "-- NM";
+        document.getElementById('sb-alt').innerText = "Alt: -- ft";
+        document.getElementById('sb-speed').innerText = "Speed: -- kts";
+        return;
+      }
 
       valid.sort((a, b) => calcDistanceNM(userConfig.lat, userConfig.lon, a.lat, a.lon) - calcDistanceNM(userConfig.lat, userConfig.lon, b.lat, b.lon));
 
