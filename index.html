@@ -251,9 +251,18 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <script>
-    const userConfig = { lat: 52.9529, lon: -0.9547, radiusNM: 50 };
-    let pollTimer = null;
+    // --- CONFIGURATION & STATE ---
+    const ADSB_CONFIG = {
+      lat: 52.9529,
+      lon: -0.9547,
+      radiusNM: 50,
+      pollInterval: 12000, // 12s interval to clear api limits
+      backoffIncrement: 20000 // 20s backoff on HTTP 429
+    };
+
     let activeAircraft = [];
+    let isFetching = false;
+    let currentBackoff = 0;
     let map = null;
     let canvas = null;
     let ctx = null;
@@ -301,15 +310,15 @@
         doubleClickZoom: false,
         boxZoom: false,
         keyboard: false
-      }).setView([userConfig.lat, userConfig.lon], 8);
+      }).setView([ADSB_CONFIG.lat, ADSB_CONFIG.lon], 8);
 
       L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
         maxZoom: 16
       }).addTo(map);
 
-      const radiusMeters = userConfig.radiusNM * 1852;
+      const radiusMeters = ADSB_CONFIG.radiusNM * 1852;
       
-      L.circle([userConfig.lat, userConfig.lon], {
+      L.circle([ADSB_CONFIG.lat, ADSB_CONFIG.lon], {
         color: '#00ff9d',
         weight: 5,
         opacity: 1.0,
@@ -318,7 +327,7 @@
         radius: radiusMeters
       }).addTo(map);
 
-      L.circle([userConfig.lat, userConfig.lon], {
+      L.circle([ADSB_CONFIG.lat, ADSB_CONFIG.lon], {
         color: '#ffffff',
         weight: 1.5,
         dashArray: '10, 10',
@@ -341,59 +350,60 @@
       }
     }
 
-    // CORS proxy fallback mechanism to bypass GitHub Pages cross-origin restrictions
+    // --- FETCH DATA WITH WORKING PROXIES & BACKOFF ---
     async function fetchADSBData() {
-      const lat = userConfig.lat;
-      const lon = userConfig.lon;
-      const targetApi = `https://api.adsb.lol/v2/lat/${lat}/lon/${lon}/dist/50`;
+      if (isFetching) return null;
+      isFetching = true;
 
-      const proxiedUrls = [
-        `https://corsproxy.io/?${encodeURIComponent(targetApi)}`,
-        `https://api.allorigins.win/raw?url=${encodeURIComponent(targetApi)}`,
-        `https://api.adsb.lol/v2/lat/${lat}/lon/${lon}/dist/50`
+      const directUrl = `https://api.adsb.lol/v2/lat/${ADSB_CONFIG.lat}/lon/${ADSB_CONFIG.lon}/dist/${ADSB_CONFIG.radiusNM}`;
+      
+      const endpoints = [
+        directUrl,
+        `https://thingproxy.freeboard.io/fetch/${directUrl}`,
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(directUrl)}`
       ];
 
-      for (const url of proxiedUrls) {
+      let data = null;
+
+      for (const url of endpoints) {
         try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 5000);
+          const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
 
-          const res = await fetch(url, { signal: controller.signal });
-          clearTimeout(timeoutId);
-
-          if (res.ok) {
-            const data = await res.json();
-            const list = data.ac || data.aircraft || [];
-            if (Array.isArray(list)) {
-              return { acList: list, source: 'ADSB.lol' };
-            }
+          if (res.status === 429) {
+            console.warn('Rate limit hit (429). Increasing delay...');
+            currentBackoff = ADSB_CONFIG.backoffIncrement;
+            updateConnectionStatus('Status: Rate Limited (429). Backing off...');
+            break;
           }
-        } catch (e) {
-          console.warn(`Proxy route skipped: ${url}`);
+
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+          data = await res.json();
+          currentBackoff = 0; // Reset backoff on success
+          break;
+
+        } catch (err) {
+          console.warn(`Endpoint failed (${url}):`, err.message);
         }
       }
 
-      return null;
-    }
+      isFetching = false;
 
-    async function pollADSB() {
-      if (pollTimer) clearTimeout(pollTimer);
-      const statusEl = document.getElementById('connection-status');
-      if (statusEl) statusEl.textContent = 'Status: Scanning 50 NM Airspace...';
-
-      const result = await fetchADSBData();
-
-      if (result && result.acList) {
-        activeAircraft = result.acList;
-        if (statusEl) statusEl.textContent = `Status: Tracking ${activeAircraft.length} Aircraft (${result.source})`;
+      if (data) {
+        activeAircraft = data.ac || data.aircraft || [];
+        updateConnectionStatus(`Status: Tracking ${activeAircraft.length} Aircraft`);
+        renderFlightBoard(activeAircraft);
+        updateNearestScrollboard(activeAircraft);
       } else {
-        if (statusEl) statusEl.textContent = 'Status: Retrying Airspace Connection...';
+        updateConnectionStatus('Status: Retrying Airspace Connection...');
       }
 
-      renderFlightBoard(activeAircraft);
-      updateNearestScrollboard(activeAircraft);
+      return data;
+    }
 
-      pollTimer = setTimeout(pollADSB, 10000);
+    function updateConnectionStatus(msg) {
+      const statusEl = document.getElementById('connection-status');
+      if (statusEl) statusEl.textContent = msg;
     }
 
     function renderFlightBoard(acList) {
@@ -403,7 +413,7 @@
 
       const militaryValid = acList.filter(ac => 
         ac.lat && ac.lon && 
-        calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon) <= 50 &&
+        calcDistanceNM(ADSB_CONFIG.lat, ADSB_CONFIG.lon, ac.lat, ac.lon) <= ADSB_CONFIG.radiusNM &&
         isMilitaryAircraft(ac)
       );
 
@@ -417,7 +427,7 @@
         const planeType = ac.t || 'MIL';
         const alt = ac.alt_baro || ac.alt_geom || 0;
         const speed = ac.gs ? `${Math.round(ac.gs)} kts` : 'N/A';
-        const dist = calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon);
+        const dist = calcDistanceNM(ADSB_CONFIG.lat, ADSB_CONFIG.lon, ac.lat, ac.lon);
 
         const card = document.createElement('div');
         card.className = 'ac-card';
@@ -436,7 +446,7 @@
     }
 
     function updateNearestScrollboard(acList) {
-      const valid = acList.filter(ac => ac.lat && ac.lon && calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon) <= 50);
+      const valid = acList.filter(ac => ac.lat && ac.lon && calcDistanceNM(ADSB_CONFIG.lat, ADSB_CONFIG.lon, ac.lat, ac.lon) <= ADSB_CONFIG.radiusNM);
       if (valid.length === 0) {
         document.getElementById('sb-airline').innerText = "Searching Airspace Target...";
         document.getElementById('sb-type').innerText = "Type: --";
@@ -447,10 +457,10 @@
         return;
       }
 
-      valid.sort((a, b) => calcDistanceNM(userConfig.lat, userConfig.lon, a.lat, a.lon) - calcDistanceNM(userConfig.lat, userConfig.lon, b.lat, b.lon));
+      valid.sort((a, b) => calcDistanceNM(ADSB_CONFIG.lat, ADSB_CONFIG.lon, a.lat, a.lon) - calcDistanceNM(ADSB_CONFIG.lat, ADSB_CONFIG.lon, b.lat, b.lon));
 
       const nearest = valid[0];
-      const dist = calcDistanceNM(userConfig.lat, userConfig.lon, nearest.lat, nearest.lon);
+      const dist = calcDistanceNM(ADSB_CONFIG.lat, ADSB_CONFIG.lon, nearest.lat, nearest.lon);
       const callsign = nearest.flight ? nearest.flight.trim() : nearest.hex;
 
       document.getElementById('sb-distance').innerText = `${dist.toFixed(1)} NM`;
@@ -466,9 +476,9 @@
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      const centerPoint = map.latLngToContainerPoint([userConfig.lat, userConfig.lon]);
+      const centerPoint = map.latLngToContainerPoint([ADSB_CONFIG.lat, ADSB_CONFIG.lon]);
 
-      const outerEdgeLatLng = [userConfig.lat + 0.833, userConfig.lon];
+      const outerEdgeLatLng = [ADSB_CONFIG.lat + 0.833, ADSB_CONFIG.lon];
       const outerEdgePoint = map.latLngToContainerPoint(outerEdgeLatLng);
       const radiusPx = Math.abs(centerPoint.y - outerEdgePoint.y);
 
@@ -494,8 +504,8 @@
       activeAircraft.forEach(ac => {
         if (!ac.lat || !ac.lon) return;
 
-        const distNM = calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon);
-        if (distNM > 50) return;
+        const distNM = calcDistanceNM(ADSB_CONFIG.lat, ADSB_CONFIG.lon, ac.lat, ac.lon);
+        if (distNM > ADSB_CONFIG.radiusNM) return;
 
         const p = map.latLngToContainerPoint([ac.lat, ac.lon]);
 
@@ -528,121 +538,30 @@
       requestAnimationFrame(drawRadarScope);
     }
 
+    // --- RECURSIVE POLLING LOOP ---
+    function pollADSB() {
+      const nextDelay = ADSB_CONFIG.pollInterval + currentBackoff;
+
+      setTimeout(async () => {
+        await fetchADSBData();
+        pollADSB();
+      }, nextDelay);
+    }
+
     window.addEventListener('load', () => {
       canvas = document.getElementById('radarCanvas');
       ctx = canvas.getContext('2d');
       
-      document.getElementById('status-bar').innerText = `Station: ${userConfig.lat.toFixed(4)}° N, ${userConfig.lon.toFixed(4)}° W (50 NM)`;
+      document.getElementById('status-bar').innerText = `Station: ${ADSB_CONFIG.lat.toFixed(4)}° N, ${ADSB_CONFIG.lon.toFixed(4)}° W (${ADSB_CONFIG.radiusNM} NM)`;
 
       initMap();
       resizeCanvas();
       window.addEventListener('resize', resizeCanvas);
       
       requestAnimationFrame(drawRadarScope);
+      fetchADSBData();
       pollADSB();
     });
   </script>
-  // --- CONFIGURATION & STATE ---
-const ADSB_CONFIG = {
-  lat: 52.9529,
-  lon: -0.9547,
-  dist: 50,
-  pollInterval: 10000, // 10 seconds to respect rate limits
-  backoffIncrement: 15000 // 15 seconds added if 429 occurs
-};
-
-let isFetching = false;
-let currentBackoff = 0;
-
-// --- FETCH DATA WITH BACKOFF & CORS PROXY ---
-async function fetchADSBData() {
-  if (isFetching) return null;
-  isFetching = true;
-
-  const directUrl = `https://api.adsb.lol/v2/lat/${ADSB_CONFIG.lat}/lon/${ADSB_CONFIG.lon}/dist/${ADSB_CONFIG.dist}`;
-  const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(directUrl)}`;
-
-  // Direct endpoint first, proxy endpoint second if direct fails/CORS blocks
-  const endpoints = [directUrl, proxyUrl];
-  let data = null;
-
-  for (const url of endpoints) {
-    try {
-      const response = await fetch(url);
-
-      // Handle Rate Limiting (HTTP 429)
-      if (response.status === 429) {
-        console.warn('Rate limit hit (429). Increasing delay...');
-        currentBackoff = ADSB_CONFIG.backoffIncrement;
-        updateUIStatus('Rate limited by API. Backing off...');
-        break;
-      }
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      data = await response.json();
-      currentBackoff = 0; // Reset backoff on success
-      break; 
-
-    } catch (err) {
-      console.error(`Endpoint failed (${url}):`, err);
-    }
-  }
-
-  isFetching = false;
-
-  if (data) {
-    renderADSBData(data);
-  } else {
-    updateUIStatus('Failed to fetch aircraft data. Retrying...');
-  }
-
-  return data;
-}
-
-// --- RENDER / PROCESS DATA ---
-function renderADSBData(data) {
-  const aircraftList = data.ac || data.aircraft || [];
-  updateUIStatus(`Updated: ${new Date().toLocaleTimeString()} | Aircraft in range: ${aircraftList.length}`);
-
-  // If you have a map (e.g., Leaflet or OpenLayers), call your map update function here:
-  if (typeof updateMapMarkers === 'function') {
-    updateMapMarkers(aircraftList);
-  }
-
-  // If you have a table or display container:
-  const outputContainer = document.getElementById('output') || document.getElementById('radar-data');
-  if (outputContainer) {
-    outputContainer.textContent = JSON.stringify(data, null, 2);
-  }
-}
-
-// --- HELPER TO UPDATE UI STATUS ---
-function updateUIStatus(message) {
-  const statusElem = document.getElementById('status') || document.getElementById('radar-status');
-  if (statusElem) {
-    statusElem.innerText = message;
-  } else {
-    console.log('[ADSB Status]:', message);
-  }
-}
-
-// --- RECURSIVE POLLING LOOP ---
-function pollADSB() {
-  const nextDelay = ADSB_CONFIG.pollInterval + currentBackoff;
-
-  setTimeout(async () => {
-    await fetchADSBData();
-    pollADSB(); // Ensures requests do not overlap
-  }, nextDelay);
-}
-
-// --- INITIALIZE ON DOM LOAD ---
-document.addEventListener('DOMContentLoaded', () => {
-  fetchADSBData(); // First load
-  pollADSB();       // Start polling loop
-});
 </body>
 </html>
