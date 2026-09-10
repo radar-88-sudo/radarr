@@ -313,11 +313,8 @@
     let ctx = null;
     let sweepAngle = 0;
     let liveAircraft = [];
-    let lockedAircraft = null; // Stores the currently locked nearest aircraft
+    let lockedAircraft = null;
     let isFetching = false;
-    let pollIntervalTimer = null;
-    let currentIntervalMs = 4000;
-    let hasConnectedOnce = false;
 
     const airportDatabase = {
       'EGLL': 'London Heathrow, UK',
@@ -491,17 +488,16 @@
       if (isFetching) return;
       isFetching = true;
 
-      const primaryUrl = `https://api.adsb.lol/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`;
-      const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(primaryUrl)}`;
-      const backupUrl = `https://api.airplanes.live/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`;
-      const backupProxyUrl = `https://corsproxy.io/?${encodeURIComponent(backupUrl)}`;
-
-      const endpoints = [primaryUrl, proxyUrl, backupUrl, backupProxyUrl];
+      // Use direct endpoints (without CORS proxies) to prevent 403 proxy errors
+      const endpoints = [
+        `https://api.adsb.lol/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`,
+        `https://api.airplanes.live/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`
+      ];
       let success = false;
 
       for (let url of endpoints) {
         try {
-          const response = await fetch(url);
+          const response = await fetch(url, { headers: { 'Accept': 'application/json' } });
           if (response.ok) {
             const data = await response.json();
             const aircrafts = data.ac || data.aircraft;
@@ -525,23 +521,14 @@
     function updateUIState(isConnected) {
       const statusEl = document.getElementById('connection-status');
       if (isConnected) {
-        hasConnectedOnce = true;
         statusEl.innerText = `Live Connected (${liveAircraft.length} targets)`;
         statusEl.style.color = '#10b981';
         renderFlightBoard(liveAircraft);
         updateNearestScrollboard(liveAircraft);
-        currentIntervalMs = 15000;
       } else {
-        statusEl.innerText = `Connecting to Live Stream...`;
+        statusEl.innerText = `Connecting to Live Stream... (Retrying)`;
         statusEl.style.color = '#f59e0b';
-        currentIntervalMs = hasConnectedOnce ? 6000 : 4000;
       }
-      resetPollingInterval();
-    }
-
-    function resetPollingInterval() {
-      if (pollIntervalTimer) clearInterval(pollIntervalTimer);
-      pollIntervalTimer = setInterval(fetchLiveFlights, currentIntervalMs);
     }
 
     function getAircraftCategory(ac) {
@@ -872,7 +859,10 @@
       window.addEventListener('resize', resizeCanvas);
       
       requestAnimationFrame(drawRadarScope);
+      
+      // Initial fetch + steady 12-second poll interval to prevent 429 rate-limiting
       fetchLiveFlights();
+      setInterval(fetchLiveFlights, 12000);
     });
   </script>
 </body>
