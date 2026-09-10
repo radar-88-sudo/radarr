@@ -381,7 +381,7 @@
     let liveAircraft = [];
     let lockedAircraft = null;
     let isFetching = false;
-    const aircraftTrails = {}; // hex -> [{lat, lon}]
+    const aircraftTrails = {};
 
     const audioAlertsEnabled = true;
     const announcedMilHexes = new Set();
@@ -757,7 +757,6 @@
       document.getElementById('sb-to').innerHTML = `<b>${route.toCode}</b> — <span style="color:var(--text-dim);">${airportDatabase[route.toCode] || 'Aerodrome'}</span>`;
     }
 
-    // --- Silhouette Classification & Drawing Paths ---
     function getSilhouetteType(typeCode) {
       if (!typeCode) return 'airliner';
       const t = typeCode.toUpperCase();
@@ -770,7 +769,6 @@
     function drawAircraftSilhouettePath(ctx, type) {
       ctx.beginPath();
       if (type === 'fighter') {
-        // Sleek delta/swept military fighter
         ctx.moveTo(0, -12);
         ctx.lineTo(3, -3);
         ctx.lineTo(8, 6);
@@ -782,7 +780,6 @@
         ctx.lineTo(-8, 6);
         ctx.lineTo(-3, -3);
       } else if (type === 'heavy') {
-        // Large heavy transport / tanker / cargo
         ctx.moveTo(0, -10);
         ctx.lineTo(3, -4);
         ctx.lineTo(10, 2);
@@ -796,12 +793,10 @@
         ctx.lineTo(-10, 2);
         ctx.lineTo(-3, -4);
       } else if (type === 'helicopter') {
-        // Helicopter shape
         ctx.arc(0, 0, 5, 0, 2 * Math.PI);
         ctx.moveTo(0, 5);
         ctx.lineTo(0, 11);
       } else {
-        // Standard twin-engine commercial airliner
         ctx.moveTo(0, -10);
         ctx.lineTo(2, -5);
         ctx.lineTo(9, 1);
@@ -830,10 +825,9 @@
       const edgePt = map.latLngToContainerPoint([edgeLat, userConfig.lon]);
       const maxRadiusPx = Math.abs(edgePt.y - centerPt.y);
 
-      // Draw concentric distance rings & labels
       ctx.strokeStyle = 'rgba(16, 185, 129, 0.25)';
       ctx.lineWidth = 1;
-      [0.25, 0.5, 0.75, 1.0].forEach((factor, idx) => {
+      [0.25, 0.5, 0.75, 1.0].forEach((factor) => {
         const r = maxRadiusPx * factor;
         ctx.beginPath();
         ctx.arc(centerPt.x, centerPt.y, r, 0, 2 * Math.PI);
@@ -844,7 +838,6 @@
         ctx.fillText(`${(userConfig.radiusNM * factor).toFixed(0)} NM`, centerPt.x + 4, centerPt.y - r + 10);
       });
 
-      // Draw crosshairs & cardinal points
       ctx.beginPath();
       ctx.moveTo(centerPt.x - maxRadiusPx, centerPt.y);
       ctx.lineTo(centerPt.x + maxRadiusPx, centerPt.y);
@@ -860,7 +853,6 @@
       ctx.fillText('E', centerPt.x + maxRadiusPx + 5, centerPt.y + 4);
       ctx.fillText('W', centerPt.x - maxRadiusPx - 18, centerPt.y + 4);
 
-      // Draw rotating radar sweep line
       sweepAngle += 0.015;
       const sweepX = centerPt.x + Math.cos(sweepAngle) * maxRadiusPx;
       const sweepY = centerPt.y + Math.sin(sweepAngle) * maxRadiusPx;
@@ -872,7 +864,6 @@
       ctx.lineWidth = 1.5;
       ctx.stroke();
 
-      // Render flight trail breadcrumbs
       Object.keys(aircraftTrails).forEach(hex => {
         const trail = aircraftTrails[hex];
         if (trail.length > 1) {
@@ -888,7 +879,6 @@
         }
       });
 
-      // Render aircraft targets & type-matched silhouettes
       if (liveAircraft && liveAircraft.length > 0) {
         liveAircraft.forEach(ac => {
           if (!ac.lat || !ac.lon) return;
@@ -920,7 +910,6 @@
             ctx.stroke();
           }
 
-          // Draw Type-Matched Rotated Silhouette
           ctx.save();
           ctx.translate(pt.x, pt.y);
           const heading = ac.track !== undefined ? ac.track : 0;
@@ -936,7 +925,6 @@
           ctx.stroke();
           ctx.restore();
 
-          // Draw target label
           ctx.fillStyle = '#f8fafc';
           ctx.font = 'bold 10px system-ui';
           const label = ac.flight ? ac.flight.trim() : ac.hex;
