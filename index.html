@@ -177,7 +177,6 @@
       overflow: hidden;
     }
 
-    /* Media/Photo Box filling full banner height */
     .logo-container {
       width: 130px;
       height: 100%;
@@ -283,7 +282,6 @@
 
   <footer>
     <div class="scrollboard">
-      <!-- Media/Photo Box filling full banner height -->
       <div class="logo-container" id="sb-logo-box">
         <span class="logo-fallback" id="sb-logo-text">--</span>
       </div>
@@ -319,13 +317,74 @@
     let pollIntervalTimer = null;
     let currentIntervalMs = 15000;
 
+    // Comprehensive Airport Database with Real Names and Locations
     const airportDatabase = {
-      'EGLL': 'London Heathrow', 'EGKK': 'London Gatwick', 'EGBB': 'Birmingham Airport',
-      'EGNX': 'East Midlands', 'EGCC': 'Manchester Airport', 'EHAM': 'Amsterdam Schiphol',
-      'LFPG': 'Paris Charles de Gaulle', 'EDDF': 'Frankfurt Airport', 'KJFK': 'New York JFK',
-      'OMDB': 'Dubai International', 'EDDM': 'Munich Airport', 'LEMD': 'Madrid Barajas',
-      'LIRF': 'Rome Fiumicino', 'EIDW': 'Dublin Airport', 'LOWW': 'Vienna International',
-      'EGYM': 'RAF Marham', 'EGUN': 'RAF Mildenhall', 'EGVA': 'RAF Fairford', 'EGVN': 'RAF Brize Norton'
+      // UK Airports
+      'EGLL': 'London Heathrow, UK',
+      'EGKK': 'London Gatwick, UK',
+      'EGGW': 'London Luton, UK',
+      'EGSS': 'London Stansted, UK',
+      'EGCC': 'Manchester Airport, UK',
+      'EGBB': 'Birmingham Airport, UK',
+      'EGNX': 'East Midlands Airport, UK',
+      'EGPH': 'Edinburgh Airport, UK',
+      'EGPF': 'Glasgow Airport, UK',
+      'EGPE': 'Inverness Airport, UK',
+      'EGPD': 'Aberdeen Airport, UK',
+      'EGAA': 'Belfast International, UK',
+      'EGAC': 'Belfast City Airport, UK',
+      'EGDL': 'MOD Lyneham, UK',
+      'EGYM': 'RAF Marham, UK',
+      'EGUN': 'RAF Mildenhall, UK',
+      'EGVA': 'RAF Fairford, UK',
+      'EGVN': 'RAF Brize Norton, UK',
+      'EGMC': 'Southend Airport, UK',
+      'EGNT': 'Newcastle International, UK',
+      'EGNM': 'Leeds Bradford Airport, UK',
+      'EGPO': 'Stornoway Airport, UK',
+      
+      // Major European Hubs
+      'EHAM': 'Amsterdam Schiphol, Netherlands',
+      'LFPG': 'Paris Charles de Gaulle, France',
+      'LFPO': 'Paris Orly, France',
+      'EDDF': 'Frankfurt Airport, Germany',
+      'EDDM': 'Munich Airport, Germany',
+      'EDDH': 'Hamburg Airport, Germany',
+      'EDDB': 'Berlin Brandenburg, Germany',
+      'LEMD': 'Madrid Barajas, Spain',
+      'LEBL': 'Barcelona-El Prat, Spain',
+      'LIRF': 'Rome Fiumicino, Italy',
+      'LIMC': 'Milan Malpensa, Italy',
+      'EIDW': 'Dublin Airport, Ireland',
+      'LOWW': 'Vienna International, Austria',
+      'EKCH': 'Copenhagen Airport, Denmark',
+      'ESSA': 'Stockholm Arlanda, Sweden',
+      'ENGM': 'Oslo Gardermoen, Norway',
+      'EFHK': 'Helsinki-Vantaa, Finland',
+      'LSZH': 'Zurich Airport, Switzerland',
+      'LSGG': 'Geneva Airport, Switzerland',
+      'LPPT': 'Lisbon Portela, Portugal',
+      'LGAV': 'Athens International, Greece',
+      'LTAI': 'Antalya Airport, Turkey',
+      'LTFM': 'Istanbul Airport, Turkey',
+      'EPWA': 'Warsaw Chopin, Poland',
+      'LKPR': 'Prague Václav Havel, Czechia',
+
+      // North American & Global Hubs
+      'KJFK': 'New York JFK, USA',
+      'KLAX': 'Los Angeles International, USA',
+      'KORD': 'Chicago O\'Hare, USA',
+      'KSFO': 'San Francisco International, USA',
+      'KATL': 'Atlanta Hartsfield-Jackson, USA',
+      'KMIA': 'Miami International, USA',
+      'KBOS': 'Boston Logan International, USA',
+      'CYYZ': 'Toronto Pearson, Canada',
+      'CYVR': 'Vancouver International, Canada',
+      'OMDB': 'Dubai International, UAE',
+      'OTHH': 'Hamad International, Qatar',
+      'VHHH': 'Hong Kong International, China',
+      'WSSS': 'Singapore Changi, Singapore',
+      'YSSY': 'Sydney Kingsford Smith, Australia'
     };
 
     function calcDistanceNM(lat1, lon1, lat2, lon2) {
@@ -338,7 +397,6 @@
       return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
-    // Updated photo fetcher: Checks Registration (r) first, then falls back to Hex code
     async function fetchAircraftPhoto(ac, icaoCode, isMil) {
       const logoBox = document.getElementById('sb-logo-box');
       
@@ -349,7 +407,6 @@
 
       let photoUrl = null;
 
-      // 1. Try querying by registration (e.g. G-XXXX)
       if (ac.r) {
         try {
           const res = await fetch(`https://api.planespotters.net/pub/photos/reg/${ac.r}`);
@@ -364,7 +421,6 @@
         }
       }
 
-      // 2. Fall back to hex code lookup if registration failed or wasn't provided
       if (!photoUrl && ac.hex) {
         try {
           const res = await fetch(`https://api.planespotters.net/pub/photos/hex/${ac.hex}`);
@@ -379,13 +435,11 @@
         }
       }
 
-      // If photo was successfully found via reg or hex, display it
       if (photoUrl) {
         logoBox.innerHTML = `<img src="${photoUrl}" alt="Aircraft Photo" title="Photo via Planespotters.net">`;
         return;
       }
       
-      // Fallback to airline code logo if no individual photo exists
       if (icaoCode) {
         logoBox.innerHTML = `<img src="https://pics.avs.io/al/150/150/${icaoCode}.png" alt="${icaoCode}" onerror="this.onerror=null; this.parentElement.innerHTML='<span class=\\'logo-fallback\\'>${icaoCode}</span>';">`;
       } else {
@@ -602,17 +656,14 @@
       const flightStr = nearest.flight ? nearest.flight.trim() : `ICAO: ${nearest.hex}`;
       const icaoCode = flightStr.length >= 3 ? flightStr.substring(0, 3).toUpperCase() : '';
 
-      // Pass the whole aircraft object so reg (r) and hex are available
       fetchAircraftPhoto(nearest, icaoCode, isMilitary(nearest));
 
-      // Metrics & Speed / Height / Distance
       document.getElementById('sb-distance').innerText = `${dist.toFixed(1)} NM`;
       document.getElementById('sb-alt').innerText = `Alt: ${nearest.alt_baro || 'Ground'} ft`;
       document.getElementById('sb-speed').innerText = `Speed: ${nearest.gs || 0} kts`;
       document.getElementById('sb-airline').innerText = flightStr;
       document.getElementById('sb-type').innerText = `Type: ${nearest.t || 'Aircraft'} (${getAircraftCategory(nearest)})`;
 
-      // Vertical Rate & Arrow Indicator
       const vertRate = nearest.baro_rate !== undefined ? nearest.baro_rate : (nearest.vert_rate || 0);
       const rateEl = document.getElementById('sb-rate');
       if (vertRate > 30) {
@@ -623,7 +674,7 @@
         rateEl.innerHTML = `<span style="color: var(--text-dim);">— Level Flight</span>`;
       }
 
-      // To and From Airports with Real Names
+      // To and From Airports mapping to Code + Real Name
       let fromCode = 'EGNX';
       let toCode = 'EGLL';
       if (nearest.r) {
@@ -639,8 +690,8 @@
         toCode = keys[(hash + 4) % keys.length];
       }
 
-      const fromName = airportDatabase[fromCode] || fromCode;
-      const toName = airportDatabase[toCode] || toCode;
+      const fromName = airportDatabase[fromCode] || `${fromCode} Aerodrome`;
+      const toName = airportDatabase[toCode] || `${toCode} Aerodrome`;
 
       document.getElementById('sb-from').innerHTML = `${fromCode} — <span>${fromName}</span>`;
       document.getElementById('sb-to').innerHTML = `${toCode} — <span>${toName}</span>`;
