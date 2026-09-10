@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Live ADSB Airspace Scope (Kiosk & Emergency Watch)</title>
+  <title>Live ADSB Airspace Scope (Kiosk Mode)</title>
   
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
@@ -17,7 +17,7 @@
       --accent-green: #10b981;
       --accent-blue: #3b82f6;
       --accent-military: #ff007f;
-      --accent-emergency: #ef4444;
+      --accent-red: #ef4444;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -69,17 +69,6 @@
       100% { transform: scale(0.95); opacity: 0.8; }
     }
 
-    @keyframes emergency-flash {
-      0% { background: rgba(239, 68, 68, 0.2); border-color: var(--accent-emergency); }
-      50% { background: rgba(239, 68, 68, 0.6); border-color: #ffffff; }
-      100% { background: rgba(239, 68, 68, 0.2); border-color: var(--accent-emergency); }
-    }
-
-    .emergency-card {
-      animation: emergency-flash 1s infinite;
-      border: 2px solid var(--accent-emergency) !important;
-    }
-
     main {
       flex: 1;
       padding: 0.5rem 0.75rem;
@@ -125,7 +114,6 @@
       flex-direction: column;
       height: 100%;
       z-index: 10;
-      gap: 0.5rem;
     }
 
     .panel {
@@ -135,8 +123,7 @@
       padding: 0.6rem;
       display: flex;
       flex-direction: column;
-      flex: 1;
-      overflow: hidden;
+      height: 100%;
     }
 
     .panel-title {
@@ -320,9 +307,9 @@
 <body>
 
   <header>
-    <h1><span class="pulse-dot"></span> Live ADSB Radar Scope (Kiosk & Emergency Watch)</h1>
+    <h1><span class="pulse-dot"></span> Live ADSB Radar Scope (Kiosk Mode)</h1>
     <div style="display: flex; align-items: center; gap: 1rem;">
-      <div id="audio-indicator" style="background: rgba(30, 41, 59, 0.9); border: 1px solid var(--accent-green); color: var(--accent-green); padding: 0.25rem 0.6rem; border-radius: 6px; font-size: 0.75rem; font-weight: 600;">🔊 Audio System: WATCHING</div>
+      <div id="audio-indicator" style="background: rgba(30, 41, 59, 0.9); border: 1px solid var(--accent-green); color: var(--accent-green); padding: 0.25rem 0.6rem; border-radius: 6px; font-size: 0.75rem; font-weight: 600;">🔊 Audio System: ACTIVE</div>
       <div id="connection-status" style="font-size: 0.8rem; color: var(--accent-blue);">Initializing Feed...</div>
     </div>
   </header>
@@ -334,13 +321,6 @@
     </div>
 
     <aside class="sidebar">
-      <div class="panel" style="max-height: 130px; display: none;" id="emergency-panel-container">
-        <div class="panel-title" style="color: var(--accent-emergency);">🚨 Emergency Squawk Watch</div>
-        <div id="emergency-grid" class="aircraft-grid">
-          <div style="color:var(--text-dim); font-size:0.75rem; padding: 0.25rem; text-align:center;">No emergency codes (7500/7600/7700)</div>
-        </div>
-      </div>
-
       <div class="panel">
         <div class="panel-title" style="color: var(--accent-military);">Active Military Transponders</div>
         <div id="aircraft-grid" class="aircraft-grid">
@@ -396,36 +376,25 @@
     let map = null;
     let canvas = null;
     let ctx = null;
+    let sweepAngle = 0;
     let liveAircraft = [];
     let lockedAircraft = null;
     let isFetching = false;
 
-    let audioCtx = null;
-    let audioUnlocked = false;
+    // Audio & Speech Alert State (Forced ON)
+    const audioAlertsEnabled = true;
     const announcedMilHexes = new Set();
-    const announcedEmergencyHexes = new Set();
+    let audioCtx = null;
 
+    // Force initialize audio context instantly on load for Kiosk / Standalone displays
     function initKioskAudio() {
       try {
-        if (!audioCtx) {
-          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-          audioCtx = new AudioContextClass();
-        }
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         if (audioCtx.state === 'suspended') {
-          audioCtx.resume().then(() => {
-            if (audioCtx.state === 'running') {
-              audioUnlocked = true;
-              document.getElementById('audio-indicator').style.borderColor = '#10b981';
-              document.getElementById('audio-indicator').innerText = '🔊 Audio System: ACTIVE';
-            }
-          }).catch(() => {});
-        } else if (audioCtx.state === 'running') {
-          audioUnlocked = true;
+          audioCtx.resume();
         }
       } catch (e) {}
     }
-
-    setInterval(initKioskAudio, 2000);
 
     const aircraftModelNames = {
       'C17': 'Boeing C-17 Globemaster',
@@ -468,12 +437,20 @@
       if (num >= 0x3C0000 && num <= 0x3FFFFF) return "Germany";
       if (num >= 0x300000 && num <= 0x33FFFF) return "Italy";
       if (num >= 0x340000 && num <= 0x37FFFF) return "Spain";
+      if (num >= 0x480000 && num <= 0x48FFFF) return "Netherlands";
+      if (num >= 0x7C0000 && num <= 0x7FFFFF) return "Australia";
+      if (num >= 0x840000 && num <= 0x87FFFF) return "Japan";
+      if (num >= 0x100000 && num <= 0x1FFFFF) return "Russia";
+      if (num >= 0x780000 && num <= 0x7BFFFF) return "China";
       return "Allied Airspace";
     }
 
     function playAlertTone() {
-      if (!audioCtx || audioCtx.state !== 'running') return;
       try {
+        if (!audioCtx) initKioskAudio();
+        if (audioCtx && audioCtx.state === 'suspended') {
+          audioCtx.resume();
+        }
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
         
@@ -492,33 +469,10 @@
       } catch (e) {}
     }
 
-    function playEmergencyTone() {
-      if (!audioCtx || audioCtx.state !== 'running') return;
-      try {
-        for (let i = 0; i < 3; i++) {
-          setTimeout(() => {
-            if (!audioCtx || audioCtx.state !== 'running') return;
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(950, audioCtx.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(650, audioCtx.currentTime + 0.2);
-            
-            gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
-            
-            osc.connect(gain);
-            gain.connect(audioCtx.destination);
-            
-            osc.start();
-            osc.stop(audioCtx.currentTime + 0.25);
-          }, i * 300);
-        }
-      } catch (e) {}
-    }
-
     function announceMilitaryAircraft(ac) {
+      if (!audioAlertsEnabled) return;
       if (announcedMilHexes.has(ac.hex)) return;
+
       announcedMilHexes.add(ac.hex);
       playAlertTone();
 
@@ -526,54 +480,34 @@
         const modelName = getAircraftModelName(ac.t);
         const country = getCountryFromHex(ac.hex);
         const callsign = ac.flight ? ac.flight.trim() : 'Unknown callsign';
+        
         const speechText = `Attention. Military aircraft detected. Callsign ${callsign}. Model: ${modelName}, from ${country}.`;
         
         if ('speechSynthesis' in window) {
           const utterance = new SpeechSynthesisUtterance(speechText);
+          utterance.rate = 1.0;
+          utterance.pitch = 1.0;
           window.speechSynthesis.speak(utterance);
         }
       }, 350);
     }
 
-    function isEmergency(ac) {
-      const sq = String(ac.squawk || '').trim();
-      return sq === '7500' || sq === '7600' || sq === '7700';
-    }
-
-    function getEmergencyDescription(sq) {
-      if (sq === '7500') return 'Unlawful Interference (Hijack)';
-      if (sq === '7600') return 'Radio Communication Failure';
-      if (sq === '7700') return 'General Emergency';
-      return `Emergency Squawk ${sq}`;
-    }
-
-    function announceEmergencyAircraft(ac) {
-      const sq = String(ac.squawk || '').trim();
-      const trackerKey = `${ac.hex}-${sq}`;
-      if (announcedEmergencyHexes.has(trackerKey)) return;
-
-      announcedEmergencyHexes.add(trackerKey);
-      playEmergencyTone();
-
-      setTimeout(() => {
-        const desc = getEmergencyDescription(sq);
-        const callsign = ac.flight ? ac.flight.trim() : ac.hex;
-        const speechText = `EMERGENCY ALERT! Aircraft squawking ${sq}, ${desc}. Callsign ${callsign}.`;
-        
-        if ('speechSynthesis' in window) {
-          const utterance = new SpeechSynthesisUtterance(speechText);
-          utterance.rate = 1.05;
-          utterance.pitch = 1.2;
-          window.speechSynthesis.speak(utterance);
-        }
-      }, 400);
-    }
-
     const airportDatabase = {
       'EGLL': 'London Heathrow, UK',
       'EGKK': 'London Gatwick, UK',
+      'EGGW': 'London Luton, UK',
+      'EGSS': 'London Stansted, UK',
+      'EGCC': 'Manchester Airport, UK',
+      'EGBB': 'Birmingham Airport, UK',
       'EGNX': 'East Midlands Airport, UK',
+      'EGPH': 'Edinburgh Airport, UK',
+      'EGPF': 'Glasgow Airport, UK',
       'EGVN': 'RAF Brize Norton, UK',
+      'EGUN': 'RAF Mildenhall, UK',
+      'EGVA': 'RAF Fairford, UK',
+      'EHAM': 'Amsterdam Schiphol, Netherlands',
+      'LFPG': 'Paris Charles de Gaulle, France',
+      'EDDF': 'Frankfurt Airport, Germany',
       'KJFK': 'New York JFK, USA',
       'KLAX': 'Los Angeles International, USA'
     };
@@ -612,7 +546,7 @@
       }
     }
 
-    async function fetchCardPhoto(ac, thumbId, isEmg = false) {
+    async function fetchCardPhoto(ac, thumbId) {
       const thumbEl = document.getElementById(thumbId);
       if (!thumbEl) return;
       let photoUrl = null;
@@ -626,9 +560,9 @@
         } catch (err) {}
       }
       if (photoUrl) {
-        thumbEl.innerHTML = `<img src="${photoUrl}" alt="Aircraft Photo">`;
+        thumbEl.innerHTML = `<img src="${photoUrl}" alt="Military Aircraft Photo">`;
       } else {
-        thumbEl.innerHTML = `<span style="font-size:0.55rem; color:${isEmg ? 'var(--accent-emergency)' : 'var(--accent-military)'}; font-weight:bold; text-align:center;">${isEmg ? ac.squawk : 'MIL'}</span>`;
+        thumbEl.innerHTML = `<span style="font-size:0.55rem; color:var(--accent-military); font-weight:bold; text-align:center;">MIL</span>`;
       }
     }
 
@@ -679,15 +613,10 @@
         `https://api.airplanes.live/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`
       ];
       let success = false;
-      let hitRateLimit = false;
 
       for (let url of endpoints) {
         try {
           const response = await fetch(url, { headers: { 'Accept': 'application/json' } });
-          if (response.status === 429 || response.status === 403) {
-            hitRateLimit = true;
-            continue;
-          }
           if (response.ok) {
             const data = await response.json();
             const aircrafts = data.ac || data.aircraft;
@@ -701,26 +630,20 @@
         } catch (err) {}
       }
 
-      if (!success) updateUIState(false, hitRateLimit);
+      if (!success) updateUIState(false);
       isFetching = false;
     }
 
-    function updateUIState(isConnected, hitRateLimit = false) {
+    function updateUIState(isConnected) {
       const statusEl = document.getElementById('connection-status');
       if (isConnected) {
         statusEl.innerText = `Live Connected (${liveAircraft.length} targets)`;
         statusEl.style.color = '#10b981';
-        renderEmergencyBoard(liveAircraft);
         renderFlightBoard(liveAircraft);
         updateNearestScrollboard(liveAircraft);
       } else {
-        if (hitRateLimit) {
-          statusEl.innerText = `Rate Limited (429/403) — Backing off...`;
-          statusEl.style.color = '#ef4444';
-        } else {
-          statusEl.innerText = `Connecting... (Retrying)`;
-          statusEl.style.color = '#f59e0b';
-        }
+        statusEl.innerText = `Connecting... (Retrying)`;
+        statusEl.style.color = '#f59e0b';
       }
     }
 
@@ -738,46 +661,12 @@
       return false;
     }
 
-    function renderEmergencyBoard(acList) {
-      const emergencyGrid = document.getElementById('emergency-grid');
-      const containerPanel = document.getElementById('emergency-panel-container');
-      if (!emergencyGrid) return;
-
-      const emergencyList = acList.filter(ac => isEmergency(ac));
-
-      if (!emergencyList || emergencyList.length === 0) {
-        emergencyGrid.innerHTML = '<div style="color:var(--text-dim); font-size:0.75rem; padding: 0.25rem; text-align:center;">No emergency codes detected</div>';
-        containerPanel.style.display = 'none';
-        return;
-      }
-
-      containerPanel.style.display = 'flex';
-      emergencyGrid.innerHTML = '';
-
-      emergencyList.forEach((ac, index) => {
-        if (!ac.lat || !ac.lon) return;
-        announceEmergencyAircraft(ac);
-
-        const dist = calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon);
-        const cardId = `emg-card-${ac.hex}-${index}`;
-        const card = document.createElement('div');
-        card.className = 'ac-card emergency-card';
-        card.innerHTML = `
-          <div class="ac-thumb" id="${cardId}-thumb">
-            <span style="font-size:0.55rem; color:var(--accent-emergency); font-weight:bold;">${ac.squawk}</span>
-          </div>
-          <div style="flex: 1; min-width: 0;">
-            <div style="font-weight:bold; font-size:0.85rem; color:var(--accent-emergency); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${ac.flight ? ac.flight.trim() : ac.hex} (${ac.squawk})</div>
-            <div style="font-size:0.7rem; color:#fca5a5;">${getEmergencyDescription(ac.squawk)}</div>
-          </div>
-          <div style="text-align:right; flex-shrink: 0;">
-            <div style="font-weight:bold; color:var(--accent-emergency); font-size:0.85rem;">${dist.toFixed(1)} NM</div>
-            <div style="font-size:0.7rem; color:var(--text-dim);">${ac.alt_baro || 'Ground'} ft</div>
-          </div>
-        `;
-        emergencyGrid.appendChild(card);
-        fetchCardPhoto(ac, `${cardId}-thumb`, true);
-      });
+    function getAircraftCategory(ac) {
+      const type = (ac.t || '').toUpperCase();
+      const cat = (ac.category || '').toUpperCase();
+      if (cat.startsWith('H') || ['R44', 'H135', 'H145'].some(s => type.includes(s))) return 'HELICOPTER';
+      if (isMilitary(ac)) return 'FIGHTER_MILITARY';
+      return 'NARROWBODY';
     }
 
     function renderFlightBoard(acList) {
@@ -794,6 +683,8 @@
 
       militaryList.forEach((ac, index) => {
         if (!ac.lat || !ac.lon) return;
+
+        // Triggers audio tone + speech synthesis announcement automatically
         announceMilitaryAircraft(ac);
 
         const dist = calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon);
@@ -814,12 +705,14 @@
           </div>
         `;
         gridEl.appendChild(card);
-        fetchCardPhoto(ac, `${cardId}-thumb`, false);
+        fetchCardPhoto(ac, `${cardId}-thumb`);
       });
     }
 
     function resolveFlightRoute(flightStr, ac) {
-      if (isMilitary(ac)) return { fromCode: 'EGVN', toCode: 'EGUN' };
+      if (isMilitary(ac)) {
+        return { fromCode: 'EGVN', toCode: 'EGUN' };
+      }
       const keys = Object.keys(airportDatabase);
       const hash = parseInt(ac.hex, 16) || 12345;
       return { fromCode: keys[hash % keys.length], toCode: keys[(hash + 3) % keys.length] };
@@ -830,8 +723,7 @@
       const validAc = acList.filter(a => a.lat && a.lon);
       if (validAc.length === 0) return;
 
-      const emgAc = validAc.find(a => isEmergency(a));
-      lockedAircraft = emgAc || [...validAc].sort((a, b) => 
+      lockedAircraft = [...validAc].sort((a, b) => 
         calcDistanceNM(userConfig.lat, userConfig.lon, a.lat, a.lon) - 
         calcDistanceNM(userConfig.lat, userConfig.lon, b.lat, b.lon)
       )[0];
@@ -850,10 +742,7 @@
 
       const heading = lockedAircraft.track !== undefined ? Math.round(lockedAircraft.track) : '--';
       document.getElementById('sb-heading').innerText = `Heading: ${heading}°`;
-      
-      const sqText = lockedAircraft.squawk || '----';
-      const isEmgSq = isEmergency(lockedAircraft);
-      document.getElementById('sb-squawk').innerHTML = `Squawk: <span style="color:${isEmgSq ? 'var(--accent-emergency)' : 'var(--text-dim)'}; font-weight:${isEmgSq ? 'bold' : 'normal'};">${sqText}</span> | Hex: ${lockedAircraft.hex || '--'}`;
+      document.getElementById('sb-squawk').innerText = `Squawk: ${lockedAircraft.squawk || '----'} | Hex: ${lockedAircraft.hex || '--'}`;
 
       const vertRate = lockedAircraft.baro_rate !== undefined ? lockedAircraft.baro_rate : 0;
       const rateEl = document.getElementById('sb-rate');
@@ -880,16 +769,16 @@
       canvas = document.getElementById('radarCanvas');
       ctx = canvas.getContext('2d');
 
+      // Initialize audio instantly on window load for unattended displays
       initKioskAudio();
+
       initMap();
       resizeCanvas();
       window.addEventListener('resize', resizeCanvas);
       
       requestAnimationFrame(drawRadarScope);
       fetchLiveFlights();
-      
-      // Increased interval from 12s to 20s to prevent API 429 rate limit bans
-      setInterval(fetchLiveFlights, 20000);
+      setInterval(fetchLiveFlights, 12000);
     });
   </script>
 </body>
