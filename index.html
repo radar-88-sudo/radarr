@@ -226,7 +226,7 @@
           <div style="color:var(--text-dim); font-size:0.85rem; padding: 1rem; text-align:center;">Scanning live sector...</div>
         </div>
         <div id="status-bar" style="font-size:0.7rem; color:var(--text-dim); margin-top:0.5rem;">
-          Station: 52.9529° N, 0.9547° W (Direct Live Feed)
+          Station: 52.9529° N, 0.9547° W (Direct Feed)
         </div>
       </div>
     </aside>
@@ -259,7 +259,7 @@
     let liveAircraft = [];
     let isFetching = false;
     let pollIntervalTimer = null;
-    let currentIntervalMs = 15000;
+    let currentIntervalMs = 30000; // Safe 30-second interval to prevent 429 errors
 
     function calcDistanceNM(lat1, lon1, lat2, lon2) {
       const R = 3440.065;
@@ -324,9 +324,9 @@
       if (isFetching) return;
       isFetching = true;
 
+      // Direct endpoints only (removed unstable proxies like allorigins that trigger 522/408 errors)
       const endpoints = [
         `https://api.adsb.lol/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`,
-        `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://api.adsb.lol/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`)}`,
         `https://api.airplanes.live/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`
       ];
 
@@ -341,16 +341,7 @@
           }
           if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
           
-          let data;
-          const text = await response.text();
-          try {
-            data = JSON.parse(text);
-            if (data.contents) {
-              data = JSON.parse(data.contents);
-            }
-          } catch (e) {
-            data = JSON.parse(text);
-          }
+          const data = await response.json();
 
           if (data && data.ac) {
             liveAircraft = data.ac;
@@ -360,9 +351,9 @@
             updateNearestScrollboard(liveAircraft);
             success = true;
             
-            // Reset poll interval back to normal on success
-            if (currentIntervalMs !== 15000) {
-              currentIntervalMs = 15000;
+            // Reset back to normal 30s interval on success
+            if (currentIntervalMs !== 30000) {
+              currentIntervalMs = 30000;
               resetPollingInterval();
             }
             break;
@@ -373,12 +364,11 @@
       }
 
       if (!success) {
-        // Persist previous targets on screen instead of dropping to 0
-        document.getElementById('connection-status').innerText = `Live Stream Active (Cached - Syncing...)`;
+        document.getElementById('connection-status').innerText = `Live Stream Active (Cached - Retrying...)`;
         document.getElementById('connection-status').style.color = '#f59e0b';
         
-        // Exponential backoff up to 45s to clear rate limit buffers
-        currentIntervalMs = Math.min(currentIntervalMs * 1.5, 45000);
+        // Back off up to 60s if network glitches occur
+        currentIntervalMs = Math.min(currentIntervalMs * 1.5, 60000);
         resetPollingInterval();
       }
 
@@ -448,7 +438,6 @@
       const outerEdgePoint = map.latLngToContainerPoint(outerEdgeLatLng);
       const radiusPx = Math.abs(centerPoint.y - outerEdgePoint.y);
 
-      // Radar rings
       ctx.lineWidth = 1;
       ctx.strokeStyle = 'rgba(16, 185, 129, 0.35)';
       ctx.setLineDash([4, 4]);
@@ -468,7 +457,6 @@
 
       ctx.setLineDash([]);
 
-      // Draw real live aircraft pips
       liveAircraft.forEach(ac => {
         if (!ac.lat || !ac.lon) return;
         const p = map.latLngToContainerPoint([ac.lat, ac.lon]);
@@ -486,7 +474,6 @@
         ctx.fillText(ac.flight ? ac.flight.trim() : ac.hex, p.x + 8, p.y + 4);
       });
 
-      // Radar sweep line
       const sweepLen = Math.max(canvas.width, canvas.height);
       ctx.beginPath();
       ctx.moveTo(centerPoint.x, centerPoint.y);
@@ -512,7 +499,6 @@
       
       requestAnimationFrame(drawRadarScope);
       
-      // Pull live data immediately and start robust interval polling
       fetchLiveFlights();
       resetPollingInterval();
     });
