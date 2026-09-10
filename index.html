@@ -89,7 +89,7 @@
       overflow: hidden;
       height: 100%;
       width: 100%;
-      touch-action: none; /* Completely locks touch scaling */
+      touch-action: none;
     }
 
     #map {
@@ -100,7 +100,7 @@
       height: 100%;
       z-index: 1;
       filter: brightness(0.6) contrast(1.2) hue-rotate(180deg);
-      pointer-events: none; /* Blocks all mouse/touch interaction with the map tiles */
+      pointer-events: none; /* Blocks all mouse/touch interaction with map tiles */
     }
 
     canvas {
@@ -565,7 +565,6 @@
     }
 
     function initMap() {
-      // Initialize map with all interactive controls completely disabled
       map = L.map('map', {
         zoomControl: false,
         attributionControl: false,
@@ -578,7 +577,6 @@
         tap: false
       }).setView([userConfig.lat, userConfig.lon], 8);
 
-      // Explicitly call .disable() on all map handlers to guarantee no zoom/pan
       map.dragging.disable();
       map.touchZoom.disable();
       map.doubleClickZoom.disable();
@@ -601,7 +599,14 @@
         radius: radiusMeters
       }).addTo(map);
 
+      // Fit and strictly lock bounds & zoom to the 50 NM radar zone
       map.fitBounds(radarCircle.getBounds(), { padding: [15, 15] });
+      
+      const lockedZoom = map.getZoom();
+      map.setMinZoom(lockedZoom);
+      map.setMaxZoom(lockedZoom);
+      map.setMaxBounds(radarCircle.getBounds());
+      map.options.maxBoundsViscosity = 1.0;
     }
 
     function resizeCanvas() {
@@ -613,6 +618,10 @@
       if (map && radarCircle) {
         map.invalidateSize();
         map.fitBounds(radarCircle.getBounds(), { padding: [15, 15] });
+        const newZoom = map.getZoom();
+        map.setMinZoom(newZoom);
+        map.setMaxZoom(newZoom);
+        map.setMaxBounds(radarCircle.getBounds());
       }
     }
 
