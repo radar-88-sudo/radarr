@@ -350,9 +350,11 @@
 
     async function fetchADSBData() {
       const { lat, lon } = userConfig;
+      const proxy = "https://api.cors.lol/?url=";
 
       try {
-        const res = await fetch(`https://api.airplanes.live/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`);
+        const target = `https://api.airplanes.live/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
+        const res = await fetch(proxy + encodeURIComponent(target));
         if (res.status === 429) throw new Error("429 Rate Limit");
         if (res.ok) {
           const data = await res.json();
@@ -361,32 +363,12 @@
       } catch (e) {}
 
       try {
-        const res = await fetch(`https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`);
+        const target = `https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
+        const res = await fetch(proxy + encodeURIComponent(target));
         if (res.status === 429) throw new Error("429 Rate Limit");
         if (res.ok) {
           const data = await res.json();
           if (data && data.ac) return { acList: data.ac, source: 'ADSB.lol' };
-        }
-      } catch (e) {}
-
-      try {
-        const box = 0.8;
-        const url = `https://opensky-network.org/api/states/all?lamin=${(lat-box).toFixed(2)}&lamax=${(lat+box).toFixed(2)}&lomin=${(lon-box).toFixed(2)}&lomax=${(lon+box).toFixed(2)}`;
-        const res = await fetch(url);
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.states) {
-            const parsed = data.states.map(s => ({
-              hex: s[0],
-              flight: s[1] ? s[1].trim() : s[0].toUpperCase(),
-              lon: s[5],
-              lat: s[6],
-              alt_baro: Math.round((s[7] || 0) * 3.28084),
-              gs: Math.round((s[9] || 0) * 1.94384),
-              t: 'Commercial'
-            })).filter(ac => ac.lat !== null && ac.lon !== null);
-            return { acList: parsed, source: 'OpenSky Network' };
-          }
         }
       } catch (e) {}
 
