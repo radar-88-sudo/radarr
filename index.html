@@ -563,7 +563,7 @@
       const type = (ac.t || '').toUpperCase();
       const cat = (ac.category || '').toUpperCase();
 
-      if (cat.startsWith('H') || ['R44', 'R22', 'EC35', 'H135', 'H145', 'B06', 'AS35', 'S76', 'AW13'].some(s => type.includes(s))) {
+      if (cat.startsWith('H') || ['R44', 'R22', 'EC35', 'H135', 'H145', 'B06', 'AS35', 'S76', 'AW13', 'A169'].some(s => type.includes(s))) {
         return 'HELICOPTER';
       }
       if (['F16', 'F15', 'F18', 'EUT', 'TOR', 'HAWK', 'A10', 'C130', 'C17', 'TYPH', 'A400', 'E3TF', 'K35R'].some(s => type.includes(s)) || cat === 'A7') {
@@ -594,6 +594,12 @@
       const type = (ac.t || '').toUpperCase();
       const flight = (ac.flight || '').toUpperCase();
       const cat = (ac.category || '').toUpperCase();
+
+      // Explicitly exclude civilian emergency / HEMS / police services (e.g. HLE = UK HEMS, NPAS = Police)
+      const civilianExclusions = ['HLE', 'NPAS', 'TRA', 'POL', 'AMB'];
+      if (civilianExclusions.some(prefix => flight.startsWith(prefix))) {
+        return false;
+      }
 
       if (cat === 'A7') return true;
       if (['F16', 'F15', 'F18', 'F35', 'F22', 'EF20', 'TOR', 'HAWK', 'A10', 'C130', 'C17', 'A400', 'K35R', 'E3TF', 'V22', 'CH47', 'AH64', 'UH60', 'NH90', 'TYPH'].some(s => type.includes(s))) {
