@@ -282,11 +282,10 @@
         keyboard: false
       }).setView([userConfig.lat, userConfig.lon], 8);
 
-      // Clean minimalist CARTO Positron map layer with limited city names
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      // Using OpenStreetMap standard tiles (Free, no API key required)
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
-        subdomains: ['a', 'b', 'c', 'd'],
-        attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+        attribution: '&copy; OpenStreetMap contributors'
       }).addTo(map);
 
       const radiusMeters = userConfig.radiusNM * 1852;
@@ -345,7 +344,6 @@
             }
           }
         } catch (err) {
-          // Fallback to proxy if direct fetch fails due to CORS or network rules
           try {
             const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
             const proxyResp = await fetch(proxyUrl);
