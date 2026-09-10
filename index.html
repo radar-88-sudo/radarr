@@ -350,13 +350,11 @@
 
     async function fetchADSBData() {
       const { lat, lon } = userConfig;
-      
-      // Bypass browser extension request interceptors by using CodeTabs clean proxy
-      const proxy = "https://api.codetabs.com/v1/proxy?quest=";
+      const corsProxy = "https://corsproxy.io/?";
 
       try {
         const target = `https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
-        const res = await fetch(proxy + encodeURIComponent(target));
+        const res = await fetch(corsProxy + encodeURIComponent(target));
         if (res.ok) {
           const data = await res.json();
           if (data && data.ac) return { acList: data.ac, source: 'ADSB.lol' };
@@ -365,7 +363,7 @@
 
       try {
         const target = `https://api.airplanes.live/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
-        const res = await fetch(proxy + encodeURIComponent(target));
+        const res = await fetch(corsProxy + encodeURIComponent(target));
         if (res.ok) {
           const data = await res.json();
           if (data && data.ac) return { acList: data.ac, source: 'Airplanes.live' };
