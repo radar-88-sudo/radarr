@@ -303,7 +303,7 @@
         keyboard: false
       }).setView([userConfig.lat, userConfig.lon], 8);
 
-      // Using Esri Dark Canvas (100% Free, No API key required)
+      // Using Esri Dark Gray (Free, no API key needed, no CARTO key errors)
       L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
         maxZoom: 16
       }).addTo(map);
@@ -342,7 +342,7 @@
       }
     }
 
-    // Direct JSONP call (Bypasses CORS entirely without third-party proxies)
+    // Direct JSONP call: Completely circumvents CORS and proxy errors
     function fetchADSBData() {
       return new Promise((resolve) => {
         const callbackName = 'adsb_cb_' + Math.floor(Math.random() * 1000000);
