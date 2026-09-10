@@ -262,7 +262,7 @@
     let canvas = null;
     let ctx = null;
     let sweepAngle = 0;
-    let nextPollDelayMs = 20000;
+    let nextPollDelayMs = 25000;
 
     function calcDistanceNM(lat1, lon1, lat2, lon2) {
       const R = 3440.065;
@@ -350,12 +350,11 @@
 
     async function fetchADSBData() {
       const { lat, lon } = userConfig;
-      const proxy = "https://corsproxy.io/?";
+      const proxy = "https://api.allorigins.win/raw?url=";
 
       try {
         const target = `https://api.airplanes.live/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
         const res = await fetch(proxy + encodeURIComponent(target));
-        if (res.status === 429) throw new Error("429 Rate Limit");
         if (res.ok) {
           const data = await res.json();
           if (data && data.ac) return { acList: data.ac, source: 'Airplanes.live' };
@@ -365,7 +364,6 @@
       try {
         const target = `https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
         const res = await fetch(proxy + encodeURIComponent(target));
-        if (res.status === 429) throw new Error("429 Rate Limit");
         if (res.ok) {
           const data = await res.json();
           if (data && data.ac) return { acList: data.ac, source: 'ADSB.lol' };
@@ -383,18 +381,12 @@
       const result = await fetchADSBData();
 
       if (result && result.acList.length > 0) {
-        nextPollDelayMs = 20000;
+        nextPollDelayMs = 25000;
         activeAircraft = result.acList;
         if (statusEl) statusEl.textContent = `Status: Tracking ${activeAircraft.length} Aircraft (${result.source})`;
       } else {
-        nextPollDelayMs = 30000;
-        if (statusEl) statusEl.textContent = 'Status: Rate Limited - Backing off (Retrying in 30s)';
-        activeAircraft = [
-          { flight: 'EZY1842', hex: '406a12', lat: userConfig.lat + 0.18, lon: userConfig.lon - 0.22, alt_baro: 18500, gs: 340, t: 'A320', dbFlags: 0 },
-          { flight: 'RFR7111', hex: '43c6f2', lat: userConfig.lat - 0.15, lon: userConfig.lon + 0.12, alt_baro: 12000, gs: 280, t: 'A400M', dbFlags: 1 },
-          { flight: 'BAW274', hex: '400d5a', lat: userConfig.lat - 0.31, lon: userConfig.lon + 0.25, alt_baro: 32000, gs: 450, t: 'B772', dbFlags: 0 },
-          { flight: 'CNV404', hex: '157812', lat: userConfig.lat + 0.10, lon: userConfig.lon - 0.08, alt_baro: 21000, gs: 310, t: 'C17', dbFlags: 1 }
-        ];
+        nextPollDelayMs = 35000;
+        if (statusEl) statusEl.textContent = 'Status: Network Delay - Retrying in 35s';
       }
 
       renderFlightBoard(activeAircraft);
