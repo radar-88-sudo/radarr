@@ -97,6 +97,7 @@
       height: 100%;
       z-index: 1;
       background: #090d16;
+      filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg); /* Dark-mode effect for standard OSM */
     }
 
     canvas {
@@ -304,9 +305,9 @@
         keyboard: false
       }).setView([userConfig.lat, userConfig.lon], 8);
 
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
-        maxZoom: 19,
-        subdomains: 'abcd'
+      // OpenStreetMap with dark CSS filter (Free, no API key)
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19
       }).addTo(map);
 
       const radiusMeters = userConfig.radiusNM * 1852;
@@ -343,46 +344,34 @@
       }
     }
 
-    function fetchJSONP(url) {
-      return new Promise((resolve, reject) => {
-        const callbackName = 'jsonp_cb_' + Math.round(100000 * Math.random());
-        const script = document.createElement('script');
-        
-        window[callbackName] = function(data) {
-          delete window[callbackName];
-          document.body.removeChild(script);
-          resolve(data);
-        };
-
-        script.onerror = function() {
-          delete window[callbackName];
-          if (script.parentNode) document.body.removeChild(script);
-          reject(new Error('JSONP Request Failed'));
-        };
-
-        const hasParams = url.includes('?');
-        script.src = url + (hasParams ? '&' : '?') + 'callback=' + callbackName;
-        document.body.appendChild(script);
-      });
-    }
-
     async function fetchADSBData() {
       const { lat, lon } = userConfig;
+      const targetUrl = `https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
+      
+      // Use reliable CORS proxy
+      const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
 
       try {
-        const data = await fetchJSONP(`https://api.adsb.fi/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`);
-        if (data && data.ac) return { acList: data.ac, source: 'ADSB.fi' };
-      } catch (e) {}
-
-      try {
-        const proxy = "https://api.allorigins.win/raw?url=";
-        const targetUrl = `https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
-        const res = await fetch(proxy + encodeURIComponent(targetUrl));
+        const res = await fetch(proxyUrl);
         if (res.ok) {
           const data = await res.json();
           if (data && data.ac) return { acList: data.ac, source: 'ADSB.lol' };
         }
-      } catch (e) {}
+      } catch (e) {
+        console.warn("Proxy 1 failed, trying fallback...");
+      }
+
+      // Backup endpoint
+      try {
+        const fallbackUrl = `https://corsproxy.io/?${encodeURIComponent(`https://api.adsb.fi/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`)}`;
+        const res = await fetch(fallbackUrl);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.ac) return { acList: data.ac, source: 'ADSB.fi' };
+        }
+      } catch (e) {
+        console.error("All fetch attempts failed.");
+      }
 
       return null;
     }
