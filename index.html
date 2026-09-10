@@ -303,7 +303,6 @@
         keyboard: false
       }).setView([userConfig.lat, userConfig.lon], 8);
 
-      // Free Esri Dark Canvas basemap (no API keys required)
       L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
         maxZoom: 16
       }).addTo(map);
@@ -342,33 +341,35 @@
       }
     }
 
-    // Direct fetch against current valid endpoint structures
+    // CORS proxy fallback mechanism to bypass GitHub Pages cross-origin restrictions
     async function fetchADSBData() {
-      const lat = userConfig.lat.toFixed(4);
-      const lon = userConfig.lon.toFixed(4);
+      const lat = userConfig.lat;
+      const lon = userConfig.lon;
+      const targetApi = `https://api.adsb.lol/v2/lat/${lat}/lon/${lon}/dist/50`;
 
-      const endpoints = [
-        `https://api.adsb.lol/v2/lat/${lat}/lon/${lon}/dist/50`,
-        `https://api.adsb.fi/v2/lat/${lat}/lon/${lon}/dist/50`
+      const proxiedUrls = [
+        `https://corsproxy.io/?${encodeURIComponent(targetApi)}`,
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(targetApi)}`,
+        `https://api.adsb.lol/v2/lat/${lat}/lon/${lon}/dist/50`
       ];
 
-      for (const url of endpoints) {
+      for (const url of proxiedUrls) {
         try {
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 6000);
+          const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-          const response = await fetch(url, { signal: controller.signal });
+          const res = await fetch(url, { signal: controller.signal });
           clearTimeout(timeoutId);
 
-          if (response.ok) {
-            const data = await response.json();
+          if (res.ok) {
+            const data = await res.json();
             const list = data.ac || data.aircraft || [];
             if (Array.isArray(list)) {
-              return { acList: list, source: url.includes('lol') ? 'ADSB.lol' : 'ADSB.fi' };
+              return { acList: list, source: 'ADSB.lol' };
             }
           }
-        } catch (err) {
-          console.warn(`Endpoint failed (${url}):`, err);
+        } catch (e) {
+          console.warn(`Proxy route skipped: ${url}`);
         }
       }
 
