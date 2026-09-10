@@ -210,7 +210,7 @@
 
   <header>
     <h1><span class="pulse-dot"></span> Live ADSB Radar Scope (50 NM)</h1>
-    <div id="connection-status" style="font-size: 0.85rem; color: var(--accent-blue);">Connecting to ADSB.lol Network...</div>
+    <div id="connection-status" style="font-size: 0.85rem; color: var(--accent-blue);">Connecting to Live Feed...</div>
   </header>
 
   <main>
@@ -226,7 +226,7 @@
           <div style="color:var(--text-dim); font-size:0.85rem; padding: 1rem; text-align:center;">Scanning live sector...</div>
         </div>
         <div id="status-bar" style="font-size:0.7rem; color:var(--text-dim); margin-top:0.5rem;">
-          Station: 52.9529° N, 0.9547° W (Direct Feed)
+          Station: 52.9529° N, 0.9547° W (Direct Live Feed)
         </div>
       </div>
     </aside>
@@ -318,13 +318,14 @@
     }
 
     async function fetchLiveFlights() {
-      // Direct live query to ADSB.lol network feed (supports CORS natively)
-      const url = `https://api.adsb.lol/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`;
+      const targetApi = `https://api.adsb.lol/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`;
+      const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetApi)}`;
 
       try {
-        const response = await fetch(url);
+        const response = await fetch(proxyUrl);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        const data = await response.json();
+        const text = await response.text();
+        const data = JSON.parse(text);
         
         if (data && data.ac) {
           liveAircraft = data.ac;
@@ -337,7 +338,7 @@
           document.getElementById('connection-status').innerText = `Live Feed Active (0 targets in range)`;
         }
       } catch (err) {
-        console.warn("ADSB feed fetch issue:", err);
+        console.warn("Live feed connection issue:", err);
         document.getElementById('connection-status').innerText = `Feed Reconnecting...`;
         document.getElementById('connection-status').style.color = '#ef4444';
       }
@@ -465,9 +466,9 @@
       
       requestAnimationFrame(drawRadarScope);
       
-      // Pull live data immediately, then update every 10 seconds
+      // Pull live data immediately, then poll every 15 seconds to prevent rate-limiting
       fetchLiveFlights();
-      setInterval(fetchLiveFlights, 10000);
+      setInterval(fetchLiveFlights, 15000);
     });
   </script>
 </body>
