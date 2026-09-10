@@ -618,7 +618,6 @@
             if (aircrafts) {
               liveAircraft = aircrafts;
               
-              // Update trails
               liveAircraft.forEach(ac => {
                 if (!ac.hex || !ac.lat || !ac.lon) return;
                 if (!aircraftTrails[ac.hex]) aircraftTrails[ac.hex] = [];
@@ -758,6 +757,67 @@
       document.getElementById('sb-to').innerHTML = `<b>${route.toCode}</b> — <span style="color:var(--text-dim);">${airportDatabase[route.toCode] || 'Aerodrome'}</span>`;
     }
 
+    // --- Silhouette Classification & Drawing Paths ---
+    function getSilhouetteType(typeCode) {
+      if (!typeCode) return 'airliner';
+      const t = typeCode.toUpperCase();
+      if (['F16', 'F15', 'F18', 'F35', 'F22', 'EF20', 'EUFI', 'TYPH', 'TOR', 'HAWK', 'A10'].some(s => t.includes(s))) return 'fighter';
+      if (['C17', 'C130', 'A400', 'K35R', 'KC135', 'E3TF', 'P8', 'RC135', 'B747', 'A380', 'C5'].some(s => t.includes(s))) return 'heavy';
+      if (['CH47', 'AH64', 'UH60', 'V22', 'EC35', 'R22'].some(s => t.includes(s))) return 'helicopter';
+      return 'airliner';
+    }
+
+    function drawAircraftSilhouettePath(ctx, type) {
+      ctx.beginPath();
+      if (type === 'fighter') {
+        // Sleek delta/swept military fighter
+        ctx.moveTo(0, -12);
+        ctx.lineTo(3, -3);
+        ctx.lineTo(8, 6);
+        ctx.lineTo(2, 5);
+        ctx.lineTo(3, 10);
+        ctx.lineTo(0, 8);
+        ctx.lineTo(-3, 10);
+        ctx.lineTo(-2, 5);
+        ctx.lineTo(-8, 6);
+        ctx.lineTo(-3, -3);
+      } else if (type === 'heavy') {
+        // Large heavy transport / tanker / cargo
+        ctx.moveTo(0, -10);
+        ctx.lineTo(3, -4);
+        ctx.lineTo(10, 2);
+        ctx.lineTo(10, 5);
+        ctx.lineTo(3, 3);
+        ctx.lineTo(4, 10);
+        ctx.lineTo(0, 8);
+        ctx.lineTo(-4, 10);
+        ctx.lineTo(-3, 3);
+        ctx.lineTo(-10, 5);
+        ctx.lineTo(-10, 2);
+        ctx.lineTo(-3, -4);
+      } else if (type === 'helicopter') {
+        // Helicopter shape
+        ctx.arc(0, 0, 5, 0, 2 * Math.PI);
+        ctx.moveTo(0, 5);
+        ctx.lineTo(0, 11);
+      } else {
+        // Standard twin-engine commercial airliner
+        ctx.moveTo(0, -10);
+        ctx.lineTo(2, -5);
+        ctx.lineTo(9, 1);
+        ctx.lineTo(9, 4);
+        ctx.lineTo(2, 2);
+        ctx.lineTo(3, 8);
+        ctx.lineTo(0, 6);
+        ctx.lineTo(-3, 8);
+        ctx.lineTo(-2, 2);
+        ctx.lineTo(-9, 4);
+        ctx.lineTo(-9, 1);
+        ctx.lineTo(-2, -5);
+      }
+      ctx.closePath();
+    }
+
     let sweepAngle = 0;
 
     function drawRadarScope() {
@@ -766,7 +826,6 @@
 
       const centerPt = map.latLngToContainerPoint([userConfig.lat, userConfig.lon]);
 
-      // Calculate pixel radius for 50 NM
       const edgeLat = userConfig.lat + (userConfig.radiusNM / 60);
       const edgePt = map.latLngToContainerPoint([edgeLat, userConfig.lon]);
       const maxRadiusPx = Math.abs(edgePt.y - centerPt.y);
@@ -829,7 +888,7 @@
         }
       });
 
-      // Render aircraft targets & rotated icons
+      // Render aircraft targets & type-matched silhouettes
       if (liveAircraft && liveAircraft.length > 0) {
         liveAircraft.forEach(ac => {
           if (!ac.lat || !ac.lon) return;
@@ -839,7 +898,6 @@
           const isEmg = ac.squawk === '7500' || ac.squawk === '7600' || ac.squawk === '7700';
           const isLocked = lockedAircraft && lockedAircraft.hex === ac.hex;
 
-          // Draw pulsing red lock-on ring around the selected aircraft
           if (isLocked) {
             const pulseRadius = 14 + Math.sin(Date.now() / 150) * 4;
             ctx.beginPath();
@@ -849,7 +907,6 @@
             ctx.stroke();
           }
 
-          // Draw heading vector line
           if (ac.track !== undefined) {
             const trackRad = (ac.track - 90) * (Math.PI / 180);
             const lineLen = 22;
@@ -863,22 +920,14 @@
             ctx.stroke();
           }
 
-          // Draw Rotated Aircraft Icon Silhouette
+          // Draw Type-Matched Rotated Silhouette
           ctx.save();
           ctx.translate(pt.x, pt.y);
           const heading = ac.track !== undefined ? ac.track : 0;
           ctx.rotate((heading * Math.PI) / 180);
 
-          ctx.beginPath();
-          ctx.moveTo(0, -9);   // nose
-          ctx.lineTo(5, 3);    // right wingtip
-          ctx.lineTo(2, 2);
-          ctx.lineTo(2, 7);    // tail right
-          ctx.lineTo(0, 5);
-          ctx.lineTo(-2, 7);   // tail left
-          ctx.lineTo(-2, 2);
-          ctx.lineTo(-5, 3);   // left wingtip
-          ctx.closePath();
+          const silhouetteType = getSilhouetteType(ac.t);
+          drawAircraftSilhouettePath(ctx, silhouetteType);
 
           ctx.fillStyle = isEmg ? '#ef4444' : (isMil ? '#ff007f' : '#3b82f6');
           ctx.fill();
