@@ -733,7 +733,7 @@
         ctx.beginPath();
         ctx.moveTo(centerPoint.x, centerPoint.y);
         ctx.lineTo(acPoint.x, acPoint.y);
-        ctx.strokeStyle = 'rgba(16, 185, 129, 0.65)';
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.75)';
         ctx.lineWidth = 1.5;
         ctx.setLineDash([3, 5]);
         ctx.stroke();
@@ -748,15 +748,17 @@
         const mil = isMilitary(ac);
         const isLocked = lockedAircraft && ac.hex === lockedAircraft.hex;
 
-        // Draw flashing target lock reticle around locked aircraft
+        // Draw flashing bright red target-lock reticle around locked aircraft
         if (isLocked) {
           const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 150);
           ctx.save();
           ctx.beginPath();
           ctx.arc(p.x, p.y, 16 + (pulse * 8), 0, Math.PI * 2);
-          ctx.strokeStyle = mil ? `rgba(255, 0, 127, ${0.4 + pulse * 0.6})` : `rgba(16, 185, 129, ${0.4 + pulse * 0.6})`;
-          ctx.lineWidth = 2;
-          ctx.setLineDash([3, 3]);
+          ctx.strokeStyle = `rgba(239, 68, 68, ${0.5 + pulse * 0.5})`;
+          ctx.lineWidth = 2.5;
+          ctx.shadowColor = '#ef4444';
+          ctx.shadowBlur = 12;
+          ctx.setLineDash([4, 4]);
           ctx.stroke();
           ctx.restore();
         }
