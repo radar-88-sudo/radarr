@@ -210,7 +210,7 @@
 
   <header>
     <h1><span class="pulse-dot"></span> Airspace Scope (50 NM) - GitHub Host</h1>
-    <div id="connection-status" style="font-size: 0.85rem; color: var(--text-dim);">Status: Initializing...</div>
+    <div id="connection-status" style="font-size: 0.85rem; color: var(--accent-green);">Status: Radar Active (Simulation Feed)</div>
   </header>
 
   <main>
@@ -223,10 +223,10 @@
       <div class="panel">
         <div class="panel-title">Military Flights (50 NM Radius)</div>
         <div id="aircraft-grid" class="aircraft-grid">
-          <div style="color: var(--text-dim); font-size: 0.85rem;">Searching airspace...</div>
+          <!-- Populated dynamically -->
         </div>
         <div id="status-bar" style="font-size:0.7rem; color:var(--text-dim); margin-top:0.5rem;">
-          Station Active
+          Station: 52.9529° N, 0.9547° W (RAF Waddington Sector)
         </div>
       </div>
     </aside>
@@ -235,7 +235,7 @@
   <footer>
     <div class="scrollboard">
       <div class="info-section">
-        <div id="sb-airline" class="airline-heading">Searching Airspace Target...</div>
+        <div id="sb-airline" class="airline-heading">Initializing Target...</div>
         <div id="sb-type" style="font-size: 0.85rem; color: var(--text-dim);">Type: --</div>
         <div id="sb-route" style="font-size: 0.85rem; color: var(--text-dim);">Location: Directing scope...</div>
       </div>
@@ -252,13 +252,18 @@
 
   <script>
     const userConfig = { lat: 52.9529, lon: -0.9547, radiusNM: 50 };
-    let pollTimer = null;
-    let activeAircraft = [];
     let map = null;
     let canvas = null;
     let ctx = null;
     let sweepAngle = 0;
-    let nextPollDelayMs = 15000;
+
+    // Simulated active military flights around RAF Waddington
+    let simulatedAircraft = [
+      { hex: '43c121', flight: 'RRR721', t: 'A332', alt_baro: 24500, gs: 420, lat: 53.15, lon: -0.75, dLat: 0.0003, dLon: 0.0004 },
+      { hex: 'ae5672', flight: 'ASCOT41', t: 'C17', alt_baro: 18200, gs: 340, lat: 52.75, lon: -1.25, dLat: -0.0002, dLon: 0.0003 },
+      { hex: '3e89ac', flight: 'SHADOW1', t: 'BE20', alt_baro: 12000, gs: 260, lat: 53.05, lon: -1.15, dLat: 0.0004, dLon: -0.0002 },
+      { hex: '43c999', flight: 'REACH84', t: 'KC135', alt_baro: 28000, gs: 450, lat: 52.65, lon: -0.65, dLat: -0.0003, dLon: -0.0003 }
+    ];
 
     function calcDistanceNM(lat1, lon1, lat2, lon2) {
       const R = 3440.065;
@@ -268,29 +273,6 @@
                 Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
                 Math.sin(dLon / 2) * Math.sin(dLon / 2);
       return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    }
-
-    function isMilitaryAircraft(ac) {
-      if (ac.dbFlags !== undefined && (ac.dbFlags & 1) !== 0) return true;
-      if (ac.mil === true || ac.mil === 1) return true;
-      if (ac.t === 'Military') return true;
-
-      const flight = (ac.flight || '').trim().toUpperCase();
-      const hex = (ac.hex || '').trim().toUpperCase();
-
-      const milPrefixes = [
-        'RFR', 'RRR', 'CNV', 'NAVY', 'RCH', 'C2', 'ASCOT', 'VIPER', 'HAWK', 
-        'Sentry', 'REACH', 'VALKER', 'FORCE', 'JAKE', 'TOPCAT', 'BOEING',
-        'AAC', 'GAF', 'FAF', 'IAM', 'BAF', 'AME', 'HRZ', 'CTM', 'CEF'
-      ];
-      if (milPrefixes.some(p => flight.startsWith(p))) return true;
-
-      const milTypes = ['A400', 'C17', 'C130', 'A332', 'P8', 'KC135', 'E3TF', 'T45', 'F16', 'F35', 'TYPH'];
-      if (ac.t && milTypes.some(type => ac.t.toUpperCase().includes(type))) return true;
-
-      if (hex.startsWith('43C') || hex.startsWith('AE') || hex.startsWith('3E8') || hex.startsWith('3FA')) return true;
-
-      return false;
     }
 
     function initMap() {
@@ -342,114 +324,17 @@
       if (map) map.invalidateSize();
     }
 
-    // Fast timeout helper (4 seconds max per proxy request)
-    async function fetchWithTimeout(url, timeoutMs = 4000) {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
-      try {
-        const response = await fetch(url, { signal: controller.signal });
-        clearTimeout(timer);
-        return response;
-      } catch (err) {
-        clearTimeout(timer);
-        throw err;
-      }
-    }
+    function updateSimulation() {
+      simulatedAircraft.forEach(ac => {
+        ac.lat += ac.dLat;
+        ac.lon += ac.dLon;
+        // Bounce back if drifting too far from station
+        if (Math.abs(ac.lat - userConfig.lat) > 0.6) ac.dLat *= -1;
+        if (Math.abs(ac.lon - userConfig.lon) > 0.8) ac.dLon *= -1;
+      });
 
-    async function fetchADSBData() {
-      const { lat, lon } = userConfig;
-      
-      const endpoints = [
-        `https://api.airplanes.live/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`,
-        `https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`,
-        `https://api.adsb.one/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`
-      ];
-
-      const proxyBuilders = [
-        (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-        (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
-      ];
-
-      for (const endpointUrl of endpoints) {
-        for (const buildProxy of proxyBuilders) {
-          try {
-            const proxyUrl = buildProxy(endpointUrl);
-            const res = await fetchWithTimeout(proxyUrl, 4000);
-            if (!res.ok) continue;
-
-            const text = await res.text();
-            if (!text || text.trim().startsWith('<')) continue; // HTML error page block
-
-            const data = JSON.parse(text);
-            if (data && (data.ac || data.aircraft)) {
-              return { acList: data.ac || data.aircraft, source: 'Live API' };
-            }
-          } catch (e) {
-            // Move to next proxy/endpoint immediately on timeout or error
-          }
-        }
-      }
-
-      // Fallback simulation mode if proxies time out
-      return { acList: getSimulatedAircraft(), source: 'Simulation (Proxy Timeout Fallback)' };
-    }
-
-    function getSimulatedAircraft() {
-      const t = Date.now() / 1000;
-      return [
-        {
-          hex: '43c123',
-          flight: 'RRR721',
-          t: 'A332',
-          alt_baro: 24500,
-          gs: 420,
-          lat: userConfig.lat + 0.3 + Math.sin(t * 0.2) * 0.05,
-          lon: userConfig.lon + 0.4 + Math.cos(t * 0.2) * 0.05,
-          mil: true
-        },
-        {
-          hex: 'ae5678',
-          flight: 'ASCOT41',
-          t: 'C17',
-          alt_baro: 18200,
-          gs: 340,
-          lat: userConfig.lat - 0.25 + Math.cos(t * 0.15) * 0.04,
-          lon: userConfig.lon - 0.3 + Math.sin(t * 0.15) * 0.04,
-          mil: true
-        },
-        {
-          hex: '3e89ab',
-          flight: 'SHADOW1',
-          t: 'BE20',
-          alt_baro: 12000,
-          gs: 260,
-          lat: userConfig.lat + 0.15 + Math.sin(t * 0.3) * 0.03,
-          lon: userConfig.lon - 0.2 + Math.cos(t * 0.3) * 0.03,
-          mil: true
-        }
-      ];
-    }
-
-    async function pollADSB() {
-      if (pollTimer) clearTimeout(pollTimer);
-      const statusEl = document.getElementById('connection-status');
-      if (statusEl) statusEl.textContent = 'Status: Scanning 50 NM Airspace...';
-
-      const result = await fetchADSBData();
-
-      if (result && result.acList.length > 0) {
-        nextPollDelayMs = 15000;
-        activeAircraft = result.acList;
-        if (statusEl) statusEl.textContent = `Status: Tracking ${activeAircraft.length} Aircraft (${result.source})`;
-      } else {
-        nextPollDelayMs = 20000;
-        if (statusEl) statusEl.textContent = 'Status: Quiet Airspace - Retrying...';
-      }
-
-      renderFlightBoard(activeAircraft);
-      updateNearestScrollboard(activeAircraft);
-
-      pollTimer = setTimeout(pollADSB, nextPollDelayMs);
+      renderFlightBoard(simulatedAircraft);
+      updateNearestScrollboard(simulatedAircraft);
     }
 
     function renderFlightBoard(acList) {
@@ -457,34 +342,18 @@
       if (!gridEl) return;
       gridEl.innerHTML = '';
 
-      const militaryValid = acList.filter(ac => 
-        ac.lat && ac.lon && 
-        calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon) <= 50 &&
-        isMilitaryAircraft(ac)
-      );
-
-      if (militaryValid.length === 0) {
-        gridEl.innerHTML = '<div style="color: var(--text-dim); font-size: 0.85rem;">No military flights detected</div>';
-        return;
-      }
-
-      militaryValid.forEach(ac => {
-        const flightName = ac.flight ? ac.flight.trim() : (ac.hex ? ac.hex.toUpperCase() : 'N/A');
-        const planeType = ac.t || 'MIL';
-        const alt = ac.alt_baro || ac.alt_geom || 0;
-        const speed = ac.gs ? `${Math.round(ac.gs)} kts` : 'N/A';
+      acList.forEach(ac => {
         const dist = calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon);
-
         const card = document.createElement('div');
         card.className = 'ac-card';
         card.innerHTML = `
           <div>
-            <div style="font-weight:bold; font-size:0.95rem; color:#f8fafc;">${flightName}</div>
-            <div style="font-size:0.75rem; color:var(--text-dim);">${planeType} • ${speed}</div>
+            <div style="font-weight:bold; font-size:0.95rem; color:#f8fafc;">${ac.flight}</div>
+            <div style="font-size:0.75rem; color:var(--text-dim);">${ac.t} • ${ac.gs} kts</div>
           </div>
           <div style="text-align:right;">
             <div style="font-weight:bold; color:var(--accent-green);">${dist.toFixed(1)} NM</div>
-            <div style="font-size:0.75rem; color:var(--text-dim);">${alt} ft</div>
+            <div style="font-size:0.75rem; color:var(--text-dim);">${ac.alt_baro} ft</div>
           </div>
         `;
         gridEl.appendChild(card);
@@ -492,28 +361,18 @@
     }
 
     function updateNearestScrollboard(acList) {
-      const valid = acList.filter(ac => ac.lat && ac.lon && calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon) <= 50);
-      if (valid.length === 0) {
-        document.getElementById('sb-airline').innerText = "Scanning Active Airspace...";
-        document.getElementById('sb-type').innerText = "Type: --";
-        document.getElementById('sb-route').innerText = "Location: Waiting for target...";
-        document.getElementById('sb-distance').innerText = "-- NM";
-        document.getElementById('sb-alt').innerText = "Alt: -- ft";
-        document.getElementById('sb-speed').innerText = "Speed: -- kts";
-        return;
-      }
+      if (acList.length === 0) return;
+      let nearest = [...acList].sort((a, b) => 
+        calcDistanceNM(userConfig.lat, userConfig.lon, a.lat, a.lon) - 
+        calcDistanceNM(userConfig.lat, userConfig.lon, b.lat, b.lon)
+      )[0];
 
-      valid.sort((a, b) => calcDistanceNM(userConfig.lat, userConfig.lon, a.lat, a.lon) - calcDistanceNM(userConfig.lat, userConfig.lon, b.lat, b.lon));
-
-      const nearest = valid[0];
       const dist = calcDistanceNM(userConfig.lat, userConfig.lon, nearest.lat, nearest.lon);
-      const callsign = nearest.flight ? nearest.flight.trim() : nearest.hex;
-
       document.getElementById('sb-distance').innerText = `${dist.toFixed(1)} NM`;
-      document.getElementById('sb-alt').innerText = `Alt: ${nearest.alt_baro || 0} ft`;
-      document.getElementById('sb-speed').innerText = `Speed: ${Math.round(nearest.gs || 0)} kts`;
-      document.getElementById('sb-airline').innerText = callsign;
-      document.getElementById('sb-type').innerText = `Type: ${nearest.t || 'N/A'}`;
+      document.getElementById('sb-alt').innerText = `Alt: ${nearest.alt_baro} ft`;
+      document.getElementById('sb-speed').innerText = `Speed: ${nearest.gs} kts`;
+      document.getElementById('sb-airline').innerText = nearest.flight;
+      document.getElementById('sb-type').innerText = `Type: ${nearest.t} (Military)`;
       document.getElementById('sb-route').innerText = `Target Lat/Lon: ${nearest.lat.toFixed(2)}°, ${nearest.lon.toFixed(2)}°`;
     }
 
@@ -523,11 +382,11 @@
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       const centerPoint = map.latLngToContainerPoint([userConfig.lat, userConfig.lon]);
-
       const outerEdgeLatLng = [userConfig.lat + 0.833, userConfig.lon];
       const outerEdgePoint = map.latLngToContainerPoint(outerEdgeLatLng);
       const radiusPx = Math.abs(centerPoint.y - outerEdgePoint.y);
 
+      // Radar rings
       ctx.lineWidth = 1;
       ctx.strokeStyle = 'rgba(16, 185, 129, 0.35)';
       ctx.setLineDash([4, 4]);
@@ -547,12 +406,8 @@
 
       ctx.setLineDash([]);
 
-      activeAircraft.forEach(ac => {
-        if (!ac.lat || !ac.lon) return;
-
-        const distNM = calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon);
-        if (distNM > 50) return;
-
+      // Draw aircraft pips on canvas
+      simulatedAircraft.forEach(ac => {
         const p = map.latLngToContainerPoint([ac.lat, ac.lon]);
 
         ctx.beginPath();
@@ -565,10 +420,10 @@
 
         ctx.font = 'bold 11px monospace';
         ctx.fillStyle = '#ffffff';
-        const label = ac.flight ? ac.flight.trim() : ac.hex;
-        ctx.fillText(label, p.x + 8, p.y + 4);
+        ctx.fillText(ac.flight, p.x + 8, p.y + 4);
       });
 
+      // Radar sweep line
       const sweepLen = Math.max(canvas.width, canvas.height);
       ctx.beginPath();
       ctx.moveTo(centerPoint.x, centerPoint.y);
@@ -587,15 +442,14 @@
     window.addEventListener('load', () => {
       canvas = document.getElementById('radarCanvas');
       ctx = canvas.getContext('2d');
-      
-      document.getElementById('status-bar').innerText = `Station: ${userConfig.lat.toFixed(4)}° N, ${userConfig.lon.toFixed(4)}° W (50 NM)`;
 
       initMap();
       resizeCanvas();
       window.addEventListener('resize', resizeCanvas);
       
       requestAnimationFrame(drawRadarScope);
-      pollADSB();
+      setInterval(updateSimulation, 1000);
+      updateSimulation();
     });
   </script>
 </body>
