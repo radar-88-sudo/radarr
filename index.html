@@ -313,9 +313,10 @@
     let ctx = null;
     let sweepAngle = 0;
     let liveAircraft = [];
+    let lockedAircraft = null; // Stores the currently locked nearest aircraft
     let isFetching = false;
     let pollIntervalTimer = null;
-    let currentIntervalMs = 4000; // Start fast on load
+    let currentIntervalMs = 4000;
     let hasConnectedOnce = false;
 
     const airportDatabase = {
@@ -529,11 +530,10 @@
         statusEl.style.color = '#10b981';
         renderFlightBoard(liveAircraft);
         updateNearestScrollboard(liveAircraft);
-        currentIntervalMs = 15000; // Normal polling once connected
+        currentIntervalMs = 15000;
       } else {
         statusEl.innerText = `Connecting to Live Stream...`;
         statusEl.style.color = '#f59e0b';
-        // If not connected yet, retry fast (every 4 seconds). If dropped later, retry every 6 seconds.
         currentIntervalMs = hasConnectedOnce ? 6000 : 4000;
       }
       resetPollingInterval();
@@ -667,28 +667,34 @@
     }
 
     function updateNearestScrollboard(acList) {
-      if (!acList || acList.length === 0) return;
+      if (!acList || acList.length === 0) {
+        lockedAircraft = null;
+        return;
+      }
       const validAc = acList.filter(a => a.lat && a.lon);
-      if (validAc.length === 0) return;
+      if (validAc.length === 0) {
+        lockedAircraft = null;
+        return;
+      }
 
-      let nearest = [...validAc].sort((a, b) => 
+      lockedAircraft = [...validAc].sort((a, b) => 
         calcDistanceNM(userConfig.lat, userConfig.lon, a.lat, a.lon) - 
         calcDistanceNM(userConfig.lat, userConfig.lon, b.lat, b.lon)
       )[0];
 
-      const dist = calcDistanceNM(userConfig.lat, userConfig.lon, nearest.lat, nearest.lon);
-      const flightStr = nearest.flight ? nearest.flight.trim() : `ICAO: ${nearest.hex}`;
+      const dist = calcDistanceNM(userConfig.lat, userConfig.lon, lockedAircraft.lat, lockedAircraft.lon);
+      const flightStr = lockedAircraft.flight ? lockedAircraft.flight.trim() : `ICAO: ${lockedAircraft.hex}`;
       const icaoCode = flightStr.length >= 3 ? flightStr.substring(0, 3).toUpperCase() : '';
 
-      fetchAircraftPhoto(nearest, icaoCode, isMilitary(nearest));
+      fetchAircraftPhoto(lockedAircraft, icaoCode, isMilitary(lockedAircraft));
 
       document.getElementById('sb-distance').innerText = `${dist.toFixed(1)} NM`;
-      document.getElementById('sb-alt').innerText = `Alt: ${nearest.alt_baro || 'Ground'} ft`;
-      document.getElementById('sb-speed').innerText = `Speed: ${nearest.gs || 0} kts`;
+      document.getElementById('sb-alt').innerText = `Alt: ${lockedAircraft.alt_baro || 'Ground'} ft`;
+      document.getElementById('sb-speed').innerText = `Speed: ${lockedAircraft.gs || 0} kts`;
       document.getElementById('sb-airline').innerText = flightStr;
-      document.getElementById('sb-type').innerText = `Type: ${nearest.t || 'Aircraft'} (${getAircraftCategory(nearest)})`;
+      document.getElementById('sb-type').innerText = `Type: ${lockedAircraft.t || 'Aircraft'} (${getAircraftCategory(lockedAircraft)})`;
 
-      const vertRate = nearest.baro_rate !== undefined ? nearest.baro_rate : (nearest.vert_rate || 0);
+      const vertRate = lockedAircraft.baro_rate !== undefined ? lockedAircraft.baro_rate : (lockedAircraft.vert_rate || 0);
       const rateEl = document.getElementById('sb-rate');
       if (vertRate > 30) {
         rateEl.innerHTML = `<span style="color: var(--accent-green);">▲ Climbing (+${vertRate} ft/min)</span>`;
@@ -698,7 +704,7 @@
         rateEl.innerHTML = `<span style="color: var(--text-dim);">— Level Flight</span>`;
       }
 
-      const route = resolveFlightRoute(flightStr, nearest);
+      const route = resolveFlightRoute(flightStr, lockedAircraft);
       const fromName = airportDatabase[route.fromCode] || `${route.fromCode} Aerodrome`;
       const toName = airportDatabase[route.toCode] || `${route.toCode} Aerodrome`;
 
@@ -734,6 +740,19 @@
       ctx.stroke();
 
       ctx.setLineDash([]);
+
+      // Draw dotted lock-on tracking line to the nearest locked aircraft
+      if (lockedAircraft && lockedAircraft.lat && lockedAircraft.lon) {
+        const acPoint = map.latLngToContainerPoint([lockedAircraft.lat, lockedAircraft.lon]);
+        ctx.beginPath();
+        ctx.moveTo(centerPoint.x, centerPoint.y);
+        ctx.lineTo(acPoint.x, acPoint.y);
+        ctx.strokeStyle = 'rgba(16, 185, 129, 0.65)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([3, 5]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
 
       liveAircraft.forEach(ac => {
         if (!ac.lat || !ac.lon) return;
