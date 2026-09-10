@@ -275,7 +275,6 @@
     }
 
     function isMilitaryAircraft(ac) {
-      // Direct API database flags
       if (ac.dbFlags !== undefined && (ac.dbFlags & 1) !== 0) return true;
       if (ac.mil === true || ac.mil === 1) return true;
       if (ac.t === 'Military') return true;
@@ -283,7 +282,6 @@
       const flight = (ac.flight || '').trim().toUpperCase();
       const hex = (ac.hex || '').trim().toUpperCase();
 
-      // Common military callsign prefixes & flight identifiers
       const milPrefixes = [
         'RFR', 'RRR', 'CNV', 'NAVY', 'RCH', 'C2', 'ASCOT', 'VIPER', 'HAWK', 
         'Sentry', 'REACH', 'VALKER', 'FORCE', 'JAKE', 'TOPCAT', 'BOEING',
@@ -291,11 +289,9 @@
       ];
       if (milPrefixes.some(p => flight.startsWith(p))) return true;
 
-      // Common military type designations
       const milTypes = ['A400', 'C17', 'C130', 'A332', 'P8', 'KC135', 'E3TF', 'T45', 'F16', 'F35', 'TYPH'];
       if (ac.t && milTypes.some(type => ac.t.toUpperCase().includes(type))) return true;
 
-      // UK/NATO military hex block ranges (e.g., 43Cxxx for RAF, AE/AE1/AE2 for US Mil)
       if (hex.startsWith('43C') || hex.startsWith('AE') || hex.startsWith('3E8') || hex.startsWith('3FA')) return true;
 
       return false;
@@ -336,7 +332,7 @@
         radius: radiusMeters + 1200
       }).addTo(map);
 
-      map.fitBounds(circle.getBounds(), { padding: [10, 10] });
+      map.fitBounds(circle.getBounds(), { padding: [0, 0] });
     }
 
     function resizeCanvas() {
@@ -352,48 +348,54 @@
       }
     }
 
+    async function fetchWithProxy(targetUrl) {
+      const proxies = [
+        url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+        url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
+      ];
+
+      for (const getProxyUrl of proxies) {
+        try {
+          const res = await fetch(getProxyUrl(targetUrl));
+          if (res.ok) {
+            const data = await res.json();
+            if (data) return data;
+          }
+        } catch (e) {}
+      }
+      return null;
+    }
+
     async function fetchADSBData() {
       const { lat, lon } = userConfig;
-      const proxy = "https://corsproxy.io/?";
 
       try {
-        const targetUrl = `https://api.airplanes.live/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
-        const res = await fetch(proxy + encodeURIComponent(targetUrl));
-        if (res.status === 429) throw new Error("429 Rate Limit");
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.ac) return { acList: data.ac, source: 'Airplanes.live' };
-        }
+        const url = `https://api.airplanes.live/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
+        const data = await fetchWithProxy(url);
+        if (data && data.ac) return { acList: data.ac, source: 'Airplanes.live' };
       } catch (e) {}
 
       try {
-        const targetUrl = `https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
-        const res = await fetch(proxy + encodeURIComponent(targetUrl));
-        if (res.status === 429) throw new Error("429 Rate Limit");
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.ac) return { acList: data.ac, source: 'ADSB.lol' };
-        }
+        const url = `https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
+        const data = await fetchWithProxy(url);
+        if (data && data.ac) return { acList: data.ac, source: 'ADSB.lol' };
       } catch (e) {}
 
       try {
         const box = 0.8;
-        const targetUrl = `https://opensky-network.org/api/states/all?lamin=${(lat-box).toFixed(2)}&lamax=${(lat+box).toFixed(2)}&lomin=${(lon-box).toFixed(2)}&lomax=${(lon+box).toFixed(2)}`;
-        const res = await fetch(proxy + encodeURIComponent(targetUrl));
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.states) {
-            const parsed = data.states.map(s => ({
-              hex: s[0],
-              flight: s[1] ? s[1].trim() : s[0].toUpperCase(),
-              lon: s[5],
-              lat: s[6],
-              alt_baro: Math.round((s[7] || 0) * 3.28084),
-              gs: Math.round((s[9] || 0) * 1.94384),
-              t: 'Commercial'
-            })).filter(ac => ac.lat !== null && ac.lon !== null);
-            return { acList: parsed, source: 'OpenSky Network' };
-          }
+        const url = `https://opensky-network.org/api/states/all?lamin=${(lat-box).toFixed(2)}&lamax=${(lat+box).toFixed(2)}&lomin=${(lon-box).toFixed(2)}&lomax=${(lon+box).toFixed(2)}`;
+        const data = await fetchWithProxy(url);
+        if (data && data.states) {
+          const parsed = data.states.map(s => ({
+            hex: s[0],
+            flight: s[1] ? s[1].trim() : s[0].toUpperCase(),
+            lon: s[5],
+            lat: s[6],
+            alt_baro: Math.round((s[7] || 0) * 3.28084),
+            gs: Math.round((s[9] || 0) * 1.94384),
+            t: 'Commercial'
+          })).filter(ac => ac.lat !== null && ac.lon !== null);
+          return { acList: parsed, source: 'OpenSky Network' };
         }
       } catch (e) {}
 
@@ -413,13 +415,7 @@
         if (statusEl) statusEl.textContent = `Status: Tracking ${activeAircraft.length} Aircraft (${result.source})`;
       } else {
         nextPollDelayMs = 30000;
-        if (statusEl) statusEl.textContent = 'Status: Rate Limited - Backing off (Retrying in 30s)';
-        activeAircraft = [
-          { flight: 'EZY1842', hex: '406a12', lat: userConfig.lat + 0.18, lon: userConfig.lon - 0.22, alt_baro: 18500, gs: 340, t: 'A320', dbFlags: 0 },
-          { flight: 'RFR7111', hex: '43c6f2', lat: userConfig.lat - 0.15, lon: userConfig.lon + 0.12, alt_baro: 12000, gs: 280, t: 'A400M', dbFlags: 1 },
-          { flight: 'BAW274', hex: '400d5a', lat: userConfig.lat - 0.31, lon: userConfig.lon + 0.25, alt_baro: 32000, gs: 450, t: 'B772', dbFlags: 0 },
-          { flight: 'CNV404', hex: '157812', lat: userConfig.lat + 0.10, lon: userConfig.lon - 0.08, alt_baro: 21000, gs: 310, t: 'C17', dbFlags: 1 }
-        ];
+        if (statusEl) statusEl.textContent = 'Status: Waiting on Proxy/Rate Limit... Retrying';
       }
 
       renderFlightBoard(activeAircraft);
