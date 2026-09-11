@@ -559,14 +559,38 @@
       'OMDB': 'Dubai International, UAE'
     };
 
-    function resolveFlightRoute(flightStr, ac) {
-      if (ac.orig && ac.dest) {
-        return { fromCode: ac.orig.toUpperCase(), toCode: ac.dest.toUpperCase() };
-      }
-      if (ac.from && ac.to) {
-        return { fromCode: ac.from.toUpperCase(), toCode: ac.to.toUpperCase() };
-      }
-      return { fromCode: 'UNKNOWN', toCode: 'UNKNOWN' };
+    // Integrated Flight Banner Route Function via ADSBdb API
+    async function updateFlightBanner(aircraft) {
+        const callsign = aircraft.flight ? aircraft.flight.trim() : null;
+        
+        let origin = "UNKNOWN";
+        let destination = "UNKNOWN";
+
+        if (callsign) {
+            try {
+                const response = await fetch(`https://api.adsbdb.com/v0/callsign/${callsign}`);
+                const data = await response.json();
+                
+                if (data && data.response && data.response.flightroute) {
+                    const route = data.response.flightroute;
+                    
+                    if (route.origin) {
+                        origin = route.origin.iata_code || route.origin.icao_code || "UNKNOWN";
+                    }
+                    if (route.destination) {
+                        destination = route.destination.iata_code || route.destination.icao_code || "UNKNOWN";
+                    }
+                }
+            } catch (error) {
+                console.warn("Route API lookup failed, keeping UNKNOWN fallback:", error);
+            }
+        }
+
+        const bannerFrom = document.getElementById("sb-from");
+        const bannerTo = document.getElementById("sb-to");
+        
+        if (bannerFrom) bannerFrom.innerText = origin;
+        if (bannerTo) bannerTo.innerText = destination;
     }
 
     function announceMilitaryAircraft(ac) {
@@ -1017,21 +1041,8 @@
         rateEl.innerHTML = `<span style="color: var(--text-dim);">— Level Flight</span>`;
       }
 
-      const route = resolveFlightRoute(flightStr, lockedAircraft);
-      
-      const fromEl = document.getElementById('sb-from');
-      if (route.fromCode === 'UNKNOWN') {
-        fromEl.innerHTML = `<span style="color: var(--text-dim);">UNKNOWN</span>`;
-      } else {
-        fromEl.innerHTML = `<b>${route.fromCode}</b> — <span style="color:var(--text-dim);">${airportDatabase[route.fromCode] || 'Aerodrome'}</span>`;
-      }
-
-      const toEl = document.getElementById('sb-to');
-      if (route.toCode === 'UNKNOWN') {
-        toEl.innerHTML = `<span style="color: var(--text-dim);">UNKNOWN</span>`;
-      } else {
-        toEl.innerHTML = `<b>${route.toCode}</b> — <span style="color:var(--text-dim);">${airportDatabase[route.toCode] || 'Aerodrome'}</span>`;
-      }
+      // Call the added updateFlightBanner function to fetch origin/destination via API
+      updateFlightBanner(lockedAircraft);
     }
 
     function getSilhouetteType(typeCode) {
