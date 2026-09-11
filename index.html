@@ -448,6 +448,10 @@
     const pulsed5Hexes = new Set();
     let audioCtx = null;
 
+    // callsign -> {fromCode, toCode, fromName, toName} on a real match,
+    // or null once we've queried and confirmed there's no route data (avoids re-querying every poll)
+    const routeCache = {};
+
     let scrollState = 'PAUSED_TOP';
     let scrollTimer = 120;
     let internalScrollPos = 0;
@@ -585,6 +589,60 @@
       'OMDB': 'Dubai International, UAE'
     };
 
+    // Batch-resolve real routes for any aircraft whose callsign we haven't looked up yet.
+    // Cheap no-op once everything currently in view has been queried (cache hit or confirmed empty).
+    async function fetchRoutesForAircraft(acList) {
+      const toQuery = [];
+      const seen = new Set();
+
+      acList.forEach(ac => {
+        const callsign = (ac.flight || '').trim().toUpperCase();
+        if (!callsign || !ac.lat || !ac.lon) return;
+        if (routeCache[callsign] !== undefined) return; // already resolved or known-empty
+        if (seen.has(callsign)) return;
+        seen.add(callsign);
+        toQuery.push({ callsign, lat: ac.lat, lng: ac.lon });
+      });
+
+      if (toQuery.length === 0) return;
+
+      const CHUNK = 100;
+      for (let i = 0; i < toQuery.length; i += CHUNK) {
+        const chunk = toQuery.slice(i, i + CHUNK);
+        try {
+          const res = await fetch('https://api.adsb.lol/api/0/routeset', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ planes: chunk })
+          });
+          if (!res.ok) continue;
+          const data = await res.json();
+
+          (data || []).forEach(entry => {
+            const cs = (entry.callsign || '').toUpperCase().trim();
+            if (!cs) return;
+            const airports = entry._airports;
+            if (airports && airports.length >= 2) {
+              const from = airports[0];
+              const to = airports[airports.length - 1];
+              routeCache[cs] = {
+                fromCode: from.iata || from.icao,
+                toCode: to.iata || to.icao,
+                fromName: from.name + (from.location ? `, ${from.location}` : ''),
+                toName: to.name + (to.location ? `, ${to.location}` : '')
+              };
+            }
+          });
+
+          // Anything in this chunk that still has no cache entry got no route match —
+          // mark as known-empty so we don't re-query it on every 12s poll.
+          chunk.forEach(p => {
+            if (routeCache[p.callsign] === undefined) routeCache[p.callsign] = null;
+          });
+        } catch (err) {}
+      }
+    }
+
     function resolveFlightRoute(flightStr, ac) {
       if (ac.orig && ac.dest) {
         return { fromCode: ac.orig.toUpperCase(), toCode: ac.dest.toUpperCase() };
@@ -594,8 +652,13 @@
       }
 
       const callsign = (flightStr || '').toUpperCase().trim();
+
+      // Real route data from adsb.lol, if we have it for this callsign.
+      const cached = routeCache[callsign];
+      if (cached) return cached;
+
       const heading = ac.track !== undefined ? ac.track : 0;
-      
+
       if (isMilitary(ac)) {
         if (callsign.startsWith('RRR') || callsign.startsWith('ASCOT')) {
           return { fromCode: 'EGVN', toCode: 'EGUN' };
@@ -846,6 +909,10 @@
                 }
               });
 
+              // Resolve real routes for any newly-seen callsigns before rendering,
+              // so the scrollboard shows real From/To on first paint where possible.
+              await fetchRoutesForAircraft(liveAircraft);
+
               updateUIState(true);
               success = true;
               break;
@@ -1045,8 +1112,10 @@
       }
 
       const route = resolveFlightRoute(flightStr, lockedAircraft);
-      document.getElementById('sb-from').innerHTML = `<b>${route.fromCode}</b> — <span style="color:var(--text-dim);">${airportDatabase[route.fromCode] || 'Aerodrome'}</span>`;
-      document.getElementById('sb-to').innerHTML = `<b>${route.toCode}</b> — <span style="color:var(--text-dim);">${airportDatabase[route.toCode] || 'Aerodrome'}</span>`;
+      document.getElementById('sb-from').innerHTML =
+        `<b>${route.fromCode}</b> — <span style="color:var(--text-dim);">${route.fromName || airportDatabase[route.fromCode] || 'Aerodrome'}</span>`;
+      document.getElementById('sb-to').innerHTML =
+        `<b>${route.toCode}</b> — <span style="color:var(--text-dim);">${route.toName || airportDatabase[route.toCode] || 'Aerodrome'}</span>`;
     }
 
     function getSilhouetteType(typeCode) {
