@@ -496,7 +496,7 @@
           onerror="document.getElementById('connection-status').innerText='LEAFLET FAILED TO LOAD - CHECK NETWORK'; document.getElementById('connection-status').style.color='#ff3333';"></script>
 
   <script>
-    const userConfig = { lat: 52.9529, lon: -0.9547, radiusNM: 250 };
+    const userConfig = { lat: 52.9529, lon: -0.9547, radiusNM: 35 };
     let map = null;
     let canvas = null;
     let ctx = null;
@@ -1164,6 +1164,15 @@
       const type = (ac.t || '').toUpperCase();
       const flight = (ac.flight || '').toUpperCase();
       const reg = (ac.r || '').toUpperCase();
+      const cat = (ac.category || '').toUpperCase();
+
+      // ADS-B emitter categories B0-B7 and C0-C3 cover non-aircraft: surface vehicles and
+      // fixed "point obstacle" beacons (commonly mounted on masts/towers, including at
+      // airports, for obstruction marking). These sometimes carry a government/military
+      // database flag - which previously tripped the dbFlags check below and got a fixed
+      // ground beacon rendered as a "military transponder". Exclude them outright first,
+      // since they're never aircraft regardless of any other flag.
+      if (/^[BC][0-7]$/.test(cat)) return false;
 
       if (reg.startsWith('G-')) return false;
 
@@ -1192,7 +1201,6 @@
         return true;
       }
 
-      const cat = (ac.category || '').toUpperCase();
       if (cat === 'A7') return true;
 
       return false;
