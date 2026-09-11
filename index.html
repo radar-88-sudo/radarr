@@ -128,7 +128,6 @@
       filter: brightness(1.15) contrast(1.05) saturate(1.1);
       opacity: 0.7;
       pointer-events: none;
-      clip-path: circle(44% at 50% 50%);
       transition: clip-path 0.2s ease-out;
     }
 
@@ -362,7 +361,7 @@
   <header>
     <h1><span class="pulse-dot"></span> Retro ADSB Radar Scope (35 NM Wall Board)</h1>
     <div style="display: flex; align-items: center; gap: 0.75rem;">
-      <div id="audio-indicator" style="background: rgba(5, 20, 10, 0.9); border: 1px solid var(--accent-green); color: var(--accent-green); padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.65rem; font-weight: 600; box-shadow: 0 0 6px rgba(0,255,102,0.3);">🔊 Audio: ACTIVE</div>
+      <div id="audio-toggle-btn" onclick="toggleAudio()" style="background: rgba(5, 20, 10, 0.9); border: 1px solid var(--accent-green); color: var(--accent-green); padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.65rem; font-weight: 600; cursor: pointer; box-shadow: 0 0 6px rgba(0,255,102,0.3); user-select: none;">🔊 Audio: ACTIVE</div>
       <div id="connection-status" style="font-size: 0.7rem; color: var(--accent-green);">Initializing Feed...</div>
     </div>
   </header>
@@ -443,7 +442,7 @@
     let radarCircle = null;
     const aircraftTrails = {};
 
-    const audioAlertsEnabled = true;
+    let audioAlertsEnabled = true;
     const announcedMilHexes = new Set();
     const pulsed35Hexes = new Set();
     const pulsed5Hexes = new Set();
@@ -460,6 +459,24 @@
           audioCtx.resume();
         }
       } catch (e) {}
+    }
+
+    function toggleAudio() {
+      audioAlertsEnabled = !audioAlertsEnabled;
+      const btn = document.getElementById('audio-toggle-btn');
+      if (audioAlertsEnabled) {
+        btn.innerText = "🔊 Audio: ACTIVE";
+        btn.style.color = "var(--accent-green)";
+        btn.style.borderColor = "var(--accent-green)";
+        initKioskAudio();
+      } else {
+        btn.innerText = "🔇 Audio: MUTED";
+        btn.style.color = "var(--text-dim)";
+        btn.style.borderColor = "var(--card-border)";
+        if ('speechSynthesis' in window) {
+          window.speechSynthesis.cancel();
+        }
+      }
     }
 
     const aircraftModelNames = {
@@ -486,13 +503,8 @@
       'RC135': 'Boeing RC-135 Rivet Joint'
     };
 
-    function getAircraftModelName(typeCode) {
-      if (!typeCode) return 'Military Aircraft';
-      const clean = typeCode.toUpperCase().trim();
-      return aircraftModelNames[clean] || `Military Aircraft (${clean})`;
-    }
-
     function playAlertTone() {
+      if (!audioAlertsEnabled) return;
       try {
         if (!audioCtx) initKioskAudio();
         if (audioCtx && audioCtx.state === 'suspended') {
@@ -517,11 +529,10 @@
     }
 
     function triggerRedPulse() {
-      playAlertTone();
       const overlay = document.getElementById('screen-pulse-overlay');
       if (!overlay) return;
       overlay.classList.remove('screen-pulse-active');
-      void overlay.offsetWidth; // Force DOM reflow to restart animation loop
+      void overlay.offsetWidth; 
       overlay.classList.add('screen-pulse-active');
     }
 
@@ -614,14 +625,15 @@
       const dist = calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon);
       let triggeredPulse = false;
 
-      // Condition 2: Within 5 NM radius (Triggers red pulse again + speech announcement)
       if (dist <= 5.0 && !pulsed5Hexes.has(ac.hex)) {
         pulsed5Hexes.add(ac.hex);
-        pulsed35Hexes.add(ac.hex); // Mark 35nm as handled so it doesn't double pulse simultaneously
+        pulsed35Hexes.add(ac.hex);
         triggeredPulse = true;
+        playAlertTone();
         triggerRedPulse();
 
         setTimeout(() => {
+          if (!audioAlertsEnabled) return;
           const callsign = ac.flight ? ac.flight.trim() : 'Unknown callsign';
           const bearing = calcBearing(userConfig.lat, userConfig.lon, ac.lat, ac.lon);
           const posCardinal = getCardinalFromDeg(bearing);
@@ -642,9 +654,9 @@
         }, 350);
       }
 
-      // Condition 1: New military aircraft in 35 NM radius
       if (!triggeredPulse && !pulsed35Hexes.has(ac.hex)) {
         pulsed35Hexes.add(ac.hex);
+        playAlertTone();
         triggerRedPulse();
       }
     }
@@ -754,15 +766,7 @@
         keyboard: false,
         touchZoom: false,
         tap: false
-      }).setView([userConfig.lat, userConfig.lon], 9);
-
-      map.dragging.disable();
-      map.touchZoom.disable();
-      map.doubleClickZoom.disable();
-      map.scrollWheelZoom.disable();
-      map.boxZoom.disable();
-      map.keyboard.disable();
-      if (map.tap) map.tap.disable();
+      }).setView([userConfig.lat, userConfig.lon], 10);
 
       L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; OpenStreetMap contributors'
@@ -778,32 +782,7 @@
         radius: radiusMeters
       }).addTo(map);
 
-      map.fitBounds(radarCircle.getBounds(), { padding: [20, 20] });
-      
-      const lockedZoom = map.getZoom();
-      map.setMinZoom(lockedZoom);
-      map.setMaxZoom(lockedZoom);
-      map.setMaxBounds(radarCircle.getBounds());
-      map.options.maxBoundsViscosity = 1.0;
-    }
-
-    function updateMapClip() {
-      const mapEl = document.getElementById('map');
-      if (!mapEl || !map || !radarCircle) return;
-      try {
-        const centerPt = map.latLngToContainerPoint([userConfig.lat, userConfig.lon]);
-        const edgeLat = userConfig.lat + (userConfig.radiusNM / 60);
-        const edgePt = map.latLngToContainerPoint([edgeLat, userConfig.lon]);
-        const radiusPx = Math.abs(edgePt.y - centerPt.y);
-        
-        if (radiusPx && radiusPx > 50) {
-          mapEl.style.clipPath = `circle(${radiusPx}px at ${centerPt.x}px ${centerPt.y}px)`;
-        } else {
-          mapEl.style.clipPath = `circle(44% at 50% 50%)`;
-        }
-      } catch (e) {
-        mapEl.style.clipPath = `circle(44% at 50% 50%)`;
-      }
+      map.fitBounds(radarCircle.getBounds(), { padding: [10, 10] });
     }
 
     function resizeCanvas() {
@@ -814,19 +793,8 @@
       canvas.height = rect.height;
       
       if (map && radarCircle) {
-        map.setMinZoom(0);
-        map.setMaxZoom(18);
         map.invalidateSize();
-        map.fitBounds(radarCircle.getBounds(), { padding: [20, 20] });
-        
-        const newZoom = map.getZoom();
-        map.setMinZoom(newZoom);
-        map.setMaxZoom(newZoom);
-        map.setMaxBounds(radarCircle.getBounds());
-
-        requestAnimationFrame(() => {
-          updateMapClip();
-        });
+        map.fitBounds(radarCircle.getBounds(), { padding: [10, 10] });
       }
     }
 
@@ -1267,7 +1235,6 @@
       canvas = document.getElementById('radarCanvas');
       ctx = canvas.getContext('2d');
 
-      initKioskAudio();
       initMap();
       resizeCanvas();
       window.addEventListener('resize', resizeCanvas);
