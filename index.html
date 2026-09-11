@@ -577,12 +577,13 @@
       if (testParam) triggerTestSquawk(testParam);
     }
 
-    // Keyboard shortcut for testing the emergency-lock path at a desktop: 5/6/7 -> 7500/7600/7700.
+    // Keyboard shortcut for testing the alert-lock path at a desktop: 5/6/7 -> 7500/7600/7700, 9 -> 7777 (QRA).
     document.addEventListener('keydown', (e) => {
       if (!feedStarted) return;
       if (e.key === '5') triggerTestSquawk('7500');
       else if (e.key === '6') triggerTestSquawk('7600');
       else if (e.key === '7') triggerTestSquawk('7700');
+      else if (e.key === '9') triggerTestSquawk('7777');
     });
 
 
@@ -684,8 +685,14 @@
       if (!audioAlertsEnabled) return;
       if (!('speechSynthesis' in window)) return;
       const callsign = ac.flight ? ac.flight.trim() : ac.hex;
-      const squawk = ac.squawk || 'an emergency code';
-      const speechText = `Emergency, emergency. A plane has put out ${squawk} with the callsign ${callsign}.`;
+      const squawk = ac.squawk || '';
+      const meaning = SQUAWK_MEANINGS[squawk] || 'an unrecognized alert code';
+      const isQra = squawk === QRA_SQUAWK;
+      // 7777 isn't a distress squawk, so it gets its own opener/verb rather than being
+      // announced as an "emergency" like the three real ICAO codes.
+      const speechText = isQra
+        ? `Alert, alert. The callsign ${callsign} is squawking ${squawk} - that means ${meaning}.`
+        : `Emergency, emergency. A plane has put out ${squawk} with the callsign ${callsign} - that means ${meaning}.`;
       const utterance = new SpeechSynthesisUtterance(speechText);
       utterance.rate = 1.0;
       utterance.pitch = 1.0;
@@ -952,18 +959,37 @@
     }
 
     const EMERGENCY_SQUAWKS = ['7500', '7600', '7700'];
+    const QRA_SQUAWK = '7777';
+    const ALERT_SQUAWKS = [...EMERGENCY_SQUAWKS, QRA_SQUAWK];
     const EMERGENCY_LOCK_RADIUS_NM = 250;
+
+    // What each code actually means, used in both the scrollboard label and the spoken
+    // callout. 7500/7600/7700 are the standard ICAO distress codes; 7777 isn't a distress
+    // squawk - it's the UK/NATO convention for a Quick Reaction Alert fighter intercept -
+    // so it gets its own wording rather than being lumped in as an "emergency".
+    const SQUAWK_MEANINGS = {
+      '7500': 'a hijacking or unlawful interference',
+      '7600': 'a radio failure',
+      '7700': 'a general emergency',
+      '7777': 'a Quick Reaction Alert fighter intercept'
+    };
 
     function isEmergencySquawk(ac) {
       return EMERGENCY_SQUAWKS.includes(ac.squawk);
     }
 
+    // True distress codes OR a QRA intercept - both take scrollboard/canvas priority over
+    // routine traffic, just with different wording once locked (see updateNearestScrollboard).
+    function isAlertSquawk(ac) {
+      return ALERT_SQUAWKS.includes(ac.squawk);
+    }
+
     // ---------------------------------------------------------------------
     // Test-squawk injector: for exercising the emergency-lock path (scrollboard override,
-    // red pulse, tone, speech) without waiting for a real 7500/7600/7700. Trigger via:
+    // red pulse, tone, speech) without waiting for a real 7500/7600/7700/7777. Trigger via:
     //   - browser console: triggerTestSquawk('7700')
     //   - URL param on load: radar.html?testsquawk=7700
-    //   - keyboard: press 5 / 6 / 7 once the feed has started
+    //   - keyboard: press 5 / 6 / 7 / 9 once the feed has started (9 = 7777 QRA)
     // The fake aircraft is merged into liveAircraft on every poll for TEST_AIRCRAFT_TTL_MS,
     // then expires on its own - no cleanup step needed.
     // ---------------------------------------------------------------------
@@ -991,8 +1017,8 @@
 
     function triggerTestSquawk(squawk) {
       squawk = String(squawk || '7700');
-      if (!EMERGENCY_SQUAWKS.includes(squawk)) {
-        console.warn(`[TEST] "${squawk}" isn't 7500/7600/7700 - defaulting to 7700`);
+      if (!ALERT_SQUAWKS.includes(squawk)) {
+        console.warn(`[TEST] "${squawk}" isn't 7500/7600/7700/7777 - defaulting to 7700`);
         squawk = '7700';
       }
       testAircraft = buildTestAircraft(squawk);
@@ -1018,17 +1044,17 @@
       )[0];
     }
 
-    // Squawking 7500 (hijack), 7600 (radio failure), or 7700 (general emergency) takes
-    // priority for the scrollboard lock over plain proximity: if any such aircraft is within
-    // EMERGENCY_LOCK_RADIUS_NM, it's shown instead of whichever aircraft is nearest. With
-    // multiple simultaneous emergencies, the closest one wins. Falls back to nearest-aircraft
-    // when there's no emergency in range.
+    // Squawking 7500 (hijack), 7600 (radio failure), 7700 (general emergency), or 7777 (QRA
+    // intercept) takes priority for the scrollboard lock over plain proximity: if any such
+    // aircraft is within EMERGENCY_LOCK_RADIUS_NM, it's shown instead of whichever aircraft
+    // is nearest. With multiple simultaneous alerts, the closest one wins. Falls back to
+    // nearest-aircraft when there's no alert in range.
     function findScrollboardTarget(acList) {
       const validAc = (acList || []).filter(a => a.lat && a.lon);
       if (validAc.length === 0) return null;
 
       const emergencyAc = validAc.filter(a =>
-        isEmergencySquawk(a) &&
+        isAlertSquawk(a) &&
         calcDistanceNM(userConfig.lat, userConfig.lon, a.lat, a.lon) <= EMERGENCY_LOCK_RADIUS_NM
       );
 
@@ -1391,12 +1417,13 @@
       const dist = calcDistanceNM(userConfig.lat, userConfig.lon, lockedAircraft.lat, lockedAircraft.lon);
       const bearing = calcBearing(userConfig.lat, userConfig.lon, lockedAircraft.lat, lockedAircraft.lon);
       const flightStr = lockedAircraft.flight ? lockedAircraft.flight.trim() : `ICAO: ${lockedAircraft.hex}`;
-      const isEmergencyLock = isEmergencySquawk(lockedAircraft);
+      const isAlertLock = isAlertSquawk(lockedAircraft);
+      const isQraLock = lockedAircraft.squawk === QRA_SQUAWK;
 
-      // Sound/flash once per aircraft the first time it takes an emergency lock, not on
+      // Sound/flash once per aircraft the first time it takes an alert lock, not on
       // every 12s poll while it's still squawking - otherwise this fires continuously for
-      // as long as the emergency lasts.
-      if (isEmergencyLock && !announcedEmergencyHexes.has(lockedAircraft.hex)) {
+      // as long as the emergency/QRA lasts.
+      if (isAlertLock && !announcedEmergencyHexes.has(lockedAircraft.hex)) {
         announcedEmergencyHexes.add(lockedAircraft.hex);
         const emergencyAc = lockedAircraft;
         const sirenMs = playEmergencySiren();
@@ -1416,11 +1443,21 @@
 
       const airlineEl = document.getElementById('sb-airline');
       const planeLabel = lockedAircraft.flight ? lockedAircraft.flight.trim() : lockedAircraft.hex;
-      airlineEl.innerText = isEmergencyLock ? `⚠ EMERGENCY-${planeLabel}-${lockedAircraft.squawk}` : flightStr;
-      airlineEl.style.color = isEmergencyLock ? 'var(--accent-red)' : 'var(--accent-green)';
-      airlineEl.style.textShadow = isEmergencyLock
-        ? '0 0 10px rgba(255,51,51,0.6)'
-        : '0 0 8px rgba(0,255,102,0.4)';
+      if (isQraLock) {
+        // 7777 isn't a distress code - label it ALERT (amber, matching the app's existing
+        // military color) rather than EMERGENCY (red).
+        airlineEl.innerText = `⚠ ALERT-${planeLabel}-${lockedAircraft.squawk}`;
+        airlineEl.style.color = 'var(--accent-military)';
+        airlineEl.style.textShadow = '0 0 10px rgba(255,176,0,0.5)';
+      } else if (isAlertLock) {
+        airlineEl.innerText = `⚠ EMERGENCY-${planeLabel}-${lockedAircraft.squawk}`;
+        airlineEl.style.color = 'var(--accent-red)';
+        airlineEl.style.textShadow = '0 0 10px rgba(255,51,51,0.6)';
+      } else {
+        airlineEl.innerText = flightStr;
+        airlineEl.style.color = 'var(--accent-green)';
+        airlineEl.style.textShadow = '0 0 8px rgba(0,255,102,0.4)';
+      }
 
       document.getElementById('sb-type').innerText = `Type: ${lockedAircraft.t || 'Aircraft'}`;
 
@@ -1727,6 +1764,7 @@
           const pt = map.latLngToContainerPoint([ac.lat, ac.lon]);
           const isMil = isMilitary(ac);
           const isEmg = ac.squawk === '7500' || ac.squawk === '7600' || ac.squawk === '7700';
+          const isQra = ac.squawk === QRA_SQUAWK;
           const isLocked = lockedAircraft && lockedAircraft.hex === ac.hex;
 
           if (isLocked) {
@@ -1763,14 +1801,14 @@
           const silhouetteType = getSilhouetteType(ac.t, ac.category);
           drawAircraftSilhouettePath(ctx, silhouetteType);
 
-          ctx.fillStyle = isEmg ? '#ff3333' : (isMil ? '#ffb000' : '#00ff66');
+          ctx.fillStyle = isEmg ? '#ff3333' : (isQra || isMil ? '#ffb000' : '#00ff66');
           ctx.fill();
           ctx.lineWidth = 0.8;
           ctx.strokeStyle = '#020704';
           ctx.stroke();
           ctx.restore();
 
-          ctx.fillStyle = isMil ? '#ffb000' : '#00ff66';
+          ctx.fillStyle = isEmg ? '#ff3333' : (isQra || isMil ? '#ffb000' : '#00ff66');
           ctx.font = 'bold 9px system-ui';
           const label = ac.flight ? ac.flight.trim() : ac.hex;
           const altText = ac.alt_baro ? ` FL${Math.round(ac.alt_baro / 100)}` : '';
