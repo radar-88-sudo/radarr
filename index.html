@@ -725,24 +725,43 @@
     function isMilitary(ac) {
       const type = (ac.t || '').toUpperCase();
       const flight = (ac.flight || '').toUpperCase();
+      const reg = (ac.r || '').toUpperCase();
 
-      // Explicitly exclude civilian light aircraft / gyroplanes like Magni M-16 (MM16)
-      if (type.includes('MM16')) return false;
+      // 1. Explicitly block civilian registration prefixes (e.g. UK 'G-' civil registry)
+      if (reg.startsWith('G-')) return false;
 
-      const dbFlags = ac.dbFlags !== undefined ? ac.dbFlags : (ac.db_flags !== undefined ? ac.db_flags : 0);
-      if (dbFlags & 1) return true;
-      const cat = (ac.category || '').toUpperCase();
-      if (cat === 'A7') return true;
+      // 2. Explicitly exclude common civilian aircraft/helicopters prone to incorrect database flags
+      const civilExclusions = [
+        'MM16', 'B407', 'R22', 'R44', 'AS35', 'EC35', 'EC45', 'H125', 'H135', 
+        'B206', 'C172', 'PA28', 'SR20', 'SR22', 'C152', 'DA40', 'DA42', 'AS50'
+      ];
+      if (civilExclusions.some(ex => type.includes(ex))) return false;
 
-      const milTypes = ['F16', 'F15', 'F18', 'F35', 'F22', 'EF20', 'EUFI', 'TYPH', 'TOR', 'HAWK', 'A10', 'C130', 'C17', 'A400', 'K35R', 'E3TF', 'V22', 'CH47', 'AH64', 'UH60', 'NH90', 'TYPH', 'P8', 'RC135', 'KC135'];
-      
+      // 3. Strict military type check
+      const milTypes = [
+        'F16', 'F15', 'F18', 'F35', 'F22', 'EF20', 'EUFI', 'TYPH', 'TOR', 
+        'HAWK', 'A10', 'C130', 'C17', 'A400', 'K35R', 'E3TF', 'V22', 'CH47', 
+        'AH64', 'UH60', 'NH90', 'P8', 'RC135', 'KC135'
+      ];
       if (milTypes.some(s => {
         if (s === 'C17') return type === 'C17' || type === 'C-17';
         return type.includes(s);
       })) return true;
 
+      // 4. Military callsign prefix check
       const milPrefixes = ['RRR', 'ASCOT', 'SHF', 'VORTEX', 'RCH', 'DUKE', 'BOOM', 'REACH', 'CNV', 'GUN', 'VIPER'];
       if (milPrefixes.some(prefix => flight.startsWith(prefix))) return true;
+
+      // 5. Upstream database flags (gated so it won't override known civil prefixes)
+      const dbFlags = ac.dbFlags !== undefined ? ac.dbFlags : (ac.db_flags !== undefined ? ac.db_flags : 0);
+      if (dbFlags & 1) {
+        if (reg.startsWith('G-') || reg.startsWith('N')) return false;
+        return true;
+      }
+
+      const cat = (ac.category || '').toUpperCase();
+      if (cat === 'A7') return true;
+
       return false;
     }
 
@@ -850,7 +869,7 @@
       const t = typeCode.toUpperCase();
       if (['F16', 'F15', 'F18', 'F35', 'F22', 'EF20', 'EUFI', 'TYPH', 'TOR', 'HAWK', 'A10'].some(s => t.includes(s))) return 'fighter';
       if (['C17', 'C130', 'A400', 'K35R', 'KC135', 'E3TF', 'P8', 'RC135', 'B747', 'A380', 'C5'].some(s => t.includes(s))) return 'heavy';
-      if (['CH47', 'AH64', 'UH60', 'V22', 'EC35', 'R22'].some(s => t.includes(s))) return 'helicopter';
+      if (['CH47', 'AH64', 'UH60', 'V22', 'EC35', 'R22', 'B407'].some(s => t.includes(s))) return 'helicopter';
       return 'airliner';
     }
 
