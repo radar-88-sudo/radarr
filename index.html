@@ -432,7 +432,7 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <script>
-    const userConfig = { lat: 52.9529, lon: -0.9547, radiusNM: 500 };
+    const userConfig = { lat: 52.9529, lon: -0.9547, radiusNM: 35 };
     let map = null;
     let canvas = null;
     let ctx = null;
@@ -634,7 +634,7 @@
       const dist = calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon);
       let triggeredPulse = false;
 
-      if (dist <= 500.0 && !pulsed5Hexes.has(ac.hex)) {
+      if (dist <= 5.0 && !pulsed5Hexes.has(ac.hex)) {
         pulsed5Hexes.add(ac.hex);
         pulsed35Hexes.add(ac.hex);
         triggeredPulse = true;
