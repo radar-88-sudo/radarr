@@ -592,11 +592,13 @@
       try {
         const res = await fetch(`${PW_SILHOUETTES_BASE}/airframes/${designator}.json`);
         if (!res.ok) {
+          console.debug(`[pw-silhouettes] no airframe entry for "${designator}" (HTTP ${res.status})`);
           pwAirframeJsonCache[designator] = null;
           return null;
         }
         pwAirframeJsonCache[designator] = await res.json();
       } catch (err) {
+        console.warn(`[pw-silhouettes] fetch failed for airframes/${designator}.json -`, err);
         pwAirframeJsonCache[designator] = null;
       }
       return pwAirframeJsonCache[designator];
@@ -610,7 +612,10 @@
       const json = await fetchPwAirframeJson(designator);
       if (!json) return null;
       if (json.aliasOf) return resolvePwAirframe(json.aliasOf, depth + 1);
-      if (!json.art || !Array.isArray(json.art.frames) || json.art.frames.length === 0) return null;
+      if (!json.art || !Array.isArray(json.art.frames) || json.art.frames.length === 0) {
+        console.warn(`[pw-silhouettes] airframes/${designator}.json has no usable art.frames -`, json);
+        return null;
+      }
       return {
         frames: json.art.frames.map(f => f.src),
         frameTime: json.art.frameTime || null,
@@ -628,7 +633,7 @@
     async function loadPwSilhouetteFrame(svgPath, colorHex) {
       if (!pwRawSvgTextCache[svgPath]) {
         pwRawSvgTextCache[svgPath] = fetch(`${PW_SILHOUETTES_BASE}/${svgPath}`).then(res => {
-          if (!res.ok) throw new Error(`pw-silhouettes: ${svgPath} not found`);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
           return res.text();
         });
       }
@@ -640,7 +645,7 @@
       return new Promise((resolve, reject) => {
         const img = new Image();
         img.onload = () => resolve(img);
-        img.onerror = () => reject(new Error(`pw-silhouettes: failed to decode ${svgPath}`));
+        img.onerror = () => reject(new Error(`failed to decode ${svgPath} as an image`));
         img.src = dataUrl;
       });
     }
@@ -665,13 +670,32 @@
             return;
           }
           const images = await Promise.all(meta.frames.map(src => loadPwSilhouetteFrame(src, colorHex)));
+          console.debug(`[pw-silhouettes] loaded real silhouette for "${designator}" (${meta.frames.join(', ')})`);
           pwColoredFrameCache[cacheKey] = { images, meta };
         } catch (err) {
+          console.warn(`[pw-silhouettes] failed to load silhouette for "${designator}" -`, err);
           pwColoredFrameCache[cacheKey] = null;
         }
       })();
       return 'loading';
     }
+
+    // Manual console helper for checking a specific designator without waiting for a real
+    // aircraft of that type to appear, e.g. testPwSilhouette('B738'). Logs the resolved
+    // render info (or why it failed) and, on success, returns the loaded <img> elements.
+    window.testPwSilhouette = async function (designator, colorHex) {
+      designator = String(designator || '').trim().toUpperCase();
+      colorHex = colorHex || '#00ff66';
+      console.log(`[pw-silhouettes] testing "${designator}"...`);
+      const json = await fetchPwAirframeJson(designator);
+      console.log(`[pw-silhouettes] airframes/${designator}.json ->`, json);
+      const meta = await resolvePwAirframe(designator);
+      console.log(`[pw-silhouettes] resolved render info ->`, meta);
+      if (!meta) return null;
+      const images = await Promise.all(meta.frames.map(src => loadPwSilhouetteFrame(src, colorHex)));
+      console.log(`[pw-silhouettes] loaded ${images.length} frame(s):`, images);
+      return images;
+    };
 
     let scrollState = 'PAUSED_TOP';
     let scrollTimer = 120;
