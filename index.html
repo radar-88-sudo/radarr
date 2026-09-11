@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Live ADSB Airspace Scope (Multi-Source Retro Radar Wall Board)</title>
+  <title>Live ADSB Airspace Scope (Retro Radar Wall Board)</title>
   
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
@@ -334,10 +334,10 @@
 <body>
 
   <header>
-    <h1><span class="pulse-dot"></span> Multi-Source ADSB Radar Scope (35 NM Wall Board)</h1>
+    <h1><span class="pulse-dot"></span> ADSB Radar Scope (35 NM Wall Board)</h1>
     <div style="display: flex; align-items: center; gap: 0.75rem;">
       <div id="audio-indicator" style="background: rgba(5, 20, 10, 0.9); border: 1px solid var(--accent-green); color: var(--accent-green); padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.65rem; font-weight: 600; box-shadow: 0 0 6px rgba(0,255,102,0.3);">🔊 Audio: ACTIVE</div>
-      <div id="connection-status" style="font-size: 0.7rem; color: var(--accent-green);">Multi-Feed Initializing...</div>
+      <div id="connection-status" style="font-size: 0.7rem; color: var(--accent-green);">Connecting...</div>
     </div>
   </header>
 
@@ -351,7 +351,7 @@
       <div class="panel">
         <div class="panel-title">Active Military Transponders</div>
         <div id="aircraft-grid" class="aircraft-grid">
-          <div style="color:var(--text-dim); font-size:0.75rem; padding: 0.5rem; text-align:center;">Scanning multi-source sector...</div>
+          <div style="color:var(--text-dim); font-size:0.75rem; padding: 0.5rem; text-align:center;">Scanning sector...</div>
         </div>
         <div id="status-bar" style="font-size:0.58rem; color:var(--text-dim); margin-top:0.3rem;">
           Station: 52.9529° N, 0.9547° W
@@ -434,33 +434,6 @@
       } catch (e) {}
     }
 
-    const aircraftModelNames = {
-      'C17': 'Boeing C-17 Globemaster',
-      'C130': 'Lockheed C-130 Hercules',
-      'F16': 'Lockheed Martin F-16 Fighting Falcon',
-      'F15': 'McDonnell Douglas F-15 Eagle',
-      'F18': 'Boeing F/A-18 Hornet',
-      'F35': 'Lockheed Martin F-35 Lightning II',
-      'EF20': 'Eurofighter Typhoon',
-      'EUFI': 'Eurofighter Typhoon',
-      'TYPH': 'Eurofighter Typhoon',
-      'A400': 'Airbus A400M Atlas',
-      'K35R': 'Boeing KC-135 Stratotanker',
-      'KC135': 'Boeing KC-135 Stratotanker',
-      'P8': 'Boeing P-8 Poseidon',
-      'E3TF': 'Boeing E-3 Sentry AWACS',
-      'CH47': 'Boeing CH-47 Chinook',
-      'AH64': 'Boeing AH-64 Apache',
-      'UH60': 'Sikorsky UH-60 Black Hawk',
-      'V22': 'Bell Boeing V-22 Osprey',
-      'HAWK': 'BAE Systems Hawk',
-      'TOR': 'Panavia Tornado',
-      'RC135': 'Boeing RC-135 Rivet Joint',
-      'B77W': 'Boeing 777-300ER',
-      'A359': 'Airbus A350-900',
-      'A388': 'Airbus A380-800'
-    };
-
     function playAlertTone() {
       try {
         if (!audioCtx) initKioskAudio();
@@ -515,60 +488,34 @@
       'LEMD': 'Madrid Barajas, Spain',
       'LIRF': 'Rome Fiumicino, Italy',
       'KJFK': 'New York JFK, USA',
-      'KLAX': 'Los Angeles International, USA',
-      'SFO': 'San Francisco Int, USA',
-      'KSFO': 'San Francisco Int, USA',
-      'CDG': 'Paris Charles de Gaulle, France',
-      'OMDB': 'Dubai International, UAE'
+      'KLAX': 'Los Angeles International, USA'
     };
 
     function resolveFlightRoute(flightStr, ac) {
-      // 1. Direct API metadata check if provided
-      if (ac.orig && ac.dest) {
-        return { fromCode: ac.orig.toUpperCase(), toCode: ac.dest.toUpperCase() };
-      }
-      if (ac.from && ac.to) {
-        return { fromCode: ac.from.toUpperCase(), toCode: ac.to.toUpperCase() };
-      }
-
       const callsign = (flightStr || '').toUpperCase().trim();
       const heading = ac.track !== undefined ? ac.track : 0;
 
-      // 2. Specific Major Flight Overrides (Fixes AFR84E, BAW, etc.)
-      if (callsign.startsWith('AFR84') || callsign === 'AFR84E') {
-        return { fromCode: 'LFPG', toCode: 'KSFO' }; // Paris CDG -> San Francisco SFO
-      } else if (callsign.startsWith('BAW') || callsign.startsWith('SHT')) {
-        return { fromCode: 'EGLL', toCode: 'KJFK' };
-      } else if (callsign.startsWith('UAE') || callsign.startsWith('OMA')) {
-        return { fromCode: 'OMDB', toCode: 'EGLL' };
-      }
-
-      // 3. Accurate Military Route Mapping based on Callsigns
       if (isMilitary(ac)) {
         if (callsign.startsWith('RRR') || callsign.startsWith('ASCOT')) {
           return { fromCode: 'EGVN', toCode: 'EGUN' };
         } else if (callsign.startsWith('SHF') || callsign.startsWith('VORTEX')) {
           return { fromCode: 'EGXC', toCode: 'EGVN' };
-        } else if (callsign.startsWith('RCH') || callsign.startsWith('REACH') || callsign.startsWith('DUKE')) {
+        } else if (callsign.startsWith('RCH') || callsign.startsWith('REACH')) {
           return { fromCode: 'ETAR', toCode: 'EGUN' };
         }
         return { fromCode: 'EGVN', toCode: 'EGXC' };
       }
 
-      // 4. Airline Prefix Smart Lookup
       if (callsign.startsWith('RYR')) {
         return { fromCode: 'EGNX', toCode: 'EHAM' };
       } else if (callsign.startsWith('EXS') || callsign.startsWith('LS')) {
         return { fromCode: 'EGNX', toCode: 'LEMD' };
       } else if (callsign.startsWith('EZY') || callsign.startsWith('U2')) {
         return { fromCode: 'EGCC', toCode: 'LFPG' };
-      } else if (callsign.startsWith('KLM')) {
-        return { fromCode: 'EHAM', toCode: 'EGBB' };
-      } else if (callsign.startsWith('DLH')) {
-        return { fromCode: 'EDDF', toCode: 'EGLL' };
+      } else if (callsign.startsWith('BAW')) {
+        return { fromCode: 'EGLL', toCode: 'KJFK' };
       }
 
-      // 5. Directional fallback for general civil traffic
       if (heading >= 315 || heading < 45) {
         return { fromCode: 'EGNX', toCode: 'EGPH' };
       } else if (heading >= 45 && heading < 135) {
@@ -775,108 +722,48 @@
       }
     }
 
-    // MULTI-SOURCE FETCHING AGGREGATOR
     async function fetchLiveFlights() {
       if (isFetching) return;
       isFetching = true;
 
-      const mergedMap = new Map();
-
-      // 1. Fetch from ADSB.lol
       try {
-        const res = await fetch(`https://api.adsb.lol/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`);
-        if (res.ok) {
-          const data = await res.json();
-          const acList = data.ac || data.aircraft || [];
-          acList.forEach(ac => {
-            if (ac.hex && ac.lat && ac.lon) mergedMap.set(ac.hex.toLowerCase(), ac);
+        const url = `https://api.adsb.lol/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Network response was not ok');
+        const data = await response.json();
+        
+        liveAircraft = data.ac || data.aircraft || [];
+
+        if (liveAircraft.length > 0) {
+          liveAircraft.forEach(ac => {
+            if (!aircraftTrails[ac.hex]) aircraftTrails[ac.hex] = [];
+            const t = aircraftTrails[ac.hex];
+            const last = t[t.length - 1];
+            if (!last || Math.abs(last.lat - ac.lat) > 0.0005 || Math.abs(last.lon - ac.lon) > 0.0005) {
+              t.push({ lat: ac.lat, lon: ac.lon });
+              if (t.length > 20) t.shift();
+            }
           });
+          updateUIState(true);
+        } else {
+          updateUIState(false);
         }
-      } catch (e) {}
-
-      // 2. Fetch from Airplanes.live
-      try {
-        const res = await fetch(`https://api.airplanes.live/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`);
-        if (res.ok) {
-          const data = await res.json();
-          const acList = data.ac || data.aircraft || [];
-          acList.forEach(ac => {
-            if (ac.hex && ac.lat && ac.lon) mergedMap.set(ac.hex.toLowerCase(), ac);
-          });
-        }
-      } catch (e) {}
-
-      // 3. Fetch from OpenSky Network API (Bounding Box)
-      try {
-        const dLat = userConfig.radiusNM / 60;
-        const dLon = userConfig.radiusNM / (60 * Math.cos(userConfig.lat * Math.PI / 180));
-        const lamin = userConfig.lat - dLat;
-        const lamax = userConfig.lat + dLat;
-        const lomin = userConfig.lon - dLon;
-        const lomax = userConfig.lon + dLon;
-
-        const res = await fetch(`https://opensky-network.org/api/states/all?lamin=${lamin}&lamax=${lamax}&lomin=${lomin}&lomax=${lomax}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.states) {
-            data.states.forEach(state => {
-              const hex = state[0];
-              const callsign = (state[1] || '').trim();
-              const lon = state[5];
-              const lat = state[6];
-              const alt_baro = state[7] ? state[7] * 3.28084 : null; // meters to ft
-              const gs = state[9] ? state[9] * 1.94384 : 0; // m/s to knots
-              const track = state[10] || 0;
-              const squawk = state[14] || '';
-
-              if (hex && lat && lon && !mergedMap.has(hex.toLowerCase())) {
-                mergedMap.set(hex.toLowerCase(), {
-                  hex: hex,
-                  flight: callsign,
-                  lat: lat,
-                  lon: lon,
-                  alt_baro: alt_baro,
-                  gs: gs,
-                  track: track,
-                  squawk: squawk,
-                  t: '',
-                  r: ''
-                });
-              }
-            });
-          }
-        }
-      } catch (e) {}
-
-      liveAircraft = Array.from(mergedMap.values());
-
-      if (liveAircraft.length > 0) {
-        liveAircraft.forEach(ac => {
-          if (!aircraftTrails[ac.hex]) aircraftTrails[ac.hex] = [];
-          const t = aircraftTrails[ac.hex];
-          const last = t[t.length - 1];
-          if (!last || Math.abs(last.lat - ac.lat) > 0.0005 || Math.abs(last.lon - ac.lon) > 0.0005) {
-            t.push({ lat: ac.lat, lon: ac.lon });
-            if (t.length > 20) t.shift();
-          }
-        });
-        updateUIState(true);
-      } else {
+      } catch (error) {
         updateUIState(false);
+      } finally {
+        isFetching = false;
       }
-
-      isFetching = false;
     }
 
     function updateUIState(isConnected) {
       const statusEl = document.getElementById('connection-status');
       if (isConnected) {
-        statusEl.innerText = `Multi-Feed Active (${liveAircraft.length} targets)`;
+        statusEl.innerText = `Connected (${liveAircraft.length} targets)`;
         statusEl.style.color = '#00ff66';
         renderFlightBoard(liveAircraft);
         updateNearestScrollboard(liveAircraft);
       } else {
-        statusEl.innerText = `Scanning Feeds... (Retrying)`;
+        statusEl.innerText = `Scanning Sector... (Retrying)`;
         statusEl.style.color = '#ffb000';
       }
     }
@@ -1033,7 +920,7 @@
       if (!typeCode) return 'airliner';
       const t = typeCode.toUpperCase();
       if (['F16', 'F15', 'F18', 'F35', 'EF20', 'EUFI', 'TYPH', 'TOR', 'HAWK'].some(s => t.includes(s))) return 'fighter';
-      if (['C17', 'C130', 'A400', 'K35R', 'B77W', 'A359', 'A388'].some(s => t.includes(s))) return 'heavy';
+      if (['C17', 'C130', 'A400', 'K35R'].some(s => t.includes(s))) return 'heavy';
       return 'airliner';
     }
 
@@ -1154,7 +1041,7 @@
       
       requestAnimationFrame(drawRadarScope);
       fetchLiveFlights();
-      setInterval(fetchLiveFlights, 12000);
+      setInterval(fetchLiveFlights, 10000);
     });
   </script>
 </body>
