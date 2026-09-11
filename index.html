@@ -428,6 +428,7 @@
 
     let scrollState = 'SCROLLING'; // 'SCROLLING', 'PAUSED_BOTTOM'
     let scrollTimer = 0;
+    let internalScrollPos = 0; // Float accumulator to bypass browser rounding
 
     function initKioskAudio() {
       try {
@@ -841,6 +842,7 @@
 
       if (!militaryList || militaryList.length === 0) {
         gridEl.innerHTML = '<div style="color:var(--text-dim); font-size:0.75rem; padding: 0.5rem; text-align:center;">No active military transponders within 35 NM.</div>';
+        internalScrollPos = 0;
         return;
       }
 
@@ -870,15 +872,19 @@
         fetchCardPhoto(ac, `${cardId}-thumb`);
       });
 
-      // Preserve previous auto-scroll position across data refreshes
+      // Preserve viewing position and sync float accumulator
       gridEl.scrollTop = Math.min(currentScroll, gridEl.scrollHeight - gridEl.clientHeight);
+      internalScrollPos = gridEl.scrollTop;
     }
 
     function processAutoScroll() {
       const grid = document.getElementById('aircraft-grid');
       if (!grid) return;
 
-      if (grid.scrollHeight <= grid.clientHeight) {
+      const maxScroll = grid.scrollHeight - grid.clientHeight;
+
+      if (maxScroll <= 0) {
+        internalScrollPos = 0;
         grid.scrollTop = 0;
         return;
       }
@@ -886,19 +892,23 @@
       if (scrollState === 'PAUSED_BOTTOM') {
         scrollTimer--;
         if (scrollTimer <= 0) {
-          grid.scrollTop = 0; // Reset to top after pause
+          internalScrollPos = 0;
+          grid.scrollTop = 0;
           scrollState = 'SCROLLING';
         }
         return;
       }
 
-      // Slower crawl speed (0.2 pixels per frame)
-      grid.scrollTop += 0.2;
+      // Increment float accumulator smoothly (0.35 pixels per frame)
+      internalScrollPos += 0.35;
+      grid.scrollTop = internalScrollPos;
 
       // Check if reached the bottom
-      if (grid.scrollTop + grid.clientHeight >= grid.scrollHeight - 1) {
+      if (grid.scrollTop >= maxScroll - 1 || internalScrollPos >= maxScroll) {
         scrollState = 'PAUSED_BOTTOM';
         scrollTimer = 120; // Exact 2 second pause at the bottom (120 frames at 60 FPS)
+        internalScrollPos = maxScroll;
+        grid.scrollTop = maxScroll;
       }
     }
 
