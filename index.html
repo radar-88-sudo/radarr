@@ -611,7 +611,7 @@
         keyboard: false,
         touchZoom: false,
         tap: false
-      }).setView([userConfig.lat, userConfig.lon], 8);
+      }).setView([userConfig.lat, userConfig.lon], 9);
 
       map.dragging.disable();
       map.touchZoom.disable();
@@ -635,9 +635,11 @@
         radius: radiusMeters
       }).addTo(map);
 
+      // Fit bounds then zoom in one extra level closer to crop out surrounding UK map area
       map.fitBounds(radarCircle.getBounds(), { padding: [15, 15] });
+      const lockedZoom = map.getZoom() + 1;
+      map.setView([userConfig.lat, userConfig.lon], lockedZoom);
       
-      const lockedZoom = map.getZoom();
       map.setMinZoom(lockedZoom);
       map.setMaxZoom(lockedZoom);
       map.setMaxBounds(radarCircle.getBounds());
@@ -653,7 +655,8 @@
       if (map && radarCircle) {
         map.invalidateSize();
         map.fitBounds(radarCircle.getBounds(), { padding: [15, 15] });
-        const newZoom = map.getZoom();
+        const newZoom = map.getZoom() + 1;
+        map.setView([userConfig.lat, userConfig.lon], newZoom);
         map.setMinZoom(newZoom);
         map.setMaxZoom(newZoom);
         map.setMaxBounds(radarCircle.getBounds());
