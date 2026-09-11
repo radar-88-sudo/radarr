@@ -105,6 +105,8 @@
       filter: brightness(0.35) contrast(1.9) saturate(0.1) hue-rotate(160deg) invert(0.9);
       opacity: 0.3;
       pointer-events: none;
+      clip-path: circle(44% at 50% 50%);
+      transition: clip-path 0.2s ease-out;
     }
 
     canvas {
@@ -682,6 +684,25 @@
       map.options.maxBoundsViscosity = 1.0;
     }
 
+    function updateMapClip() {
+      const mapEl = document.getElementById('map');
+      if (!mapEl || !map || !radarCircle) return;
+      try {
+        const centerPt = map.latLngToContainerPoint([userConfig.lat, userConfig.lon]);
+        const edgeLat = userConfig.lat + (userConfig.radiusNM / 60);
+        const edgePt = map.latLngToContainerPoint([edgeLat, userConfig.lon]);
+        const radiusPx = Math.abs(edgePt.y - centerPt.y);
+        
+        if (radiusPx && radiusPx > 50) {
+          mapEl.style.clipPath = `circle(${radiusPx}px at ${centerPt.x}px ${centerPt.y}px)`;
+        } else {
+          mapEl.style.clipPath = `circle(44% at 50% 50%)`;
+        }
+      } catch (e) {
+        mapEl.style.clipPath = `circle(44% at 50% 50%)`;
+      }
+    }
+
     function resizeCanvas() {
       if (!canvas) return;
       const container = document.getElementById('radarContainer');
@@ -700,14 +721,9 @@
         map.setMaxZoom(newZoom);
         map.setMaxBounds(radarCircle.getBounds());
 
-        // Precisely clip map tiles to the circular radar boundary
-        const centerPt = map.latLngToContainerPoint([userConfig.lat, userConfig.lon]);
-        const edgeLat = userConfig.lat + (userConfig.radiusNM / 60);
-        const edgePt = map.latLngToContainerPoint([edgeLat, userConfig.lon]);
-        const radiusPx = Math.abs(edgePt.y - centerPt.y);
-
-        const mapEl = document.getElementById('map');
-        mapEl.style.clipPath = `circle(${radiusPx}px at ${centerPt.x}px ${centerPt.y}px)`;
+        requestAnimationFrame(() => {
+          updateMapClip();
+        });
       }
     }
 
