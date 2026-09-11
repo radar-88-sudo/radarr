@@ -681,18 +681,28 @@
 
     // Spoken emergency callout - separate from announceMilitaryAircraft() (that one is for
     // routine military-proximity pings, not squawk emergencies).
+    const DIGIT_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
+
+    // TTS engines read a bare "7700" as "seven thousand seven hundred" - squawks are read
+    // digit-by-digit in real life ("seven seven zero zero"), so spell each digit out as a
+    // word rather than relying on spacing/punctuation to coax the engine into it.
+    function squawkToSpokenDigits(squawk) {
+      return String(squawk || '').split('').map(ch => DIGIT_WORDS[ch] !== undefined ? DIGIT_WORDS[ch] : ch).join(' ');
+    }
+
     function announceEmergencySquawk(ac) {
       if (!audioAlertsEnabled) return;
       if (!('speechSynthesis' in window)) return;
       const callsign = ac.flight ? ac.flight.trim() : ac.hex;
       const squawk = ac.squawk || '';
+      const spokenSquawk = squawkToSpokenDigits(squawk);
       const meaning = SQUAWK_MEANINGS[squawk] || 'an unrecognized alert code';
       const isQra = squawk === QRA_SQUAWK;
       // 7777 isn't a distress squawk, so it gets its own opener/verb rather than being
       // announced as an "emergency" like the three real ICAO codes.
       const speechText = isQra
-        ? `Alert, alert. The callsign ${callsign} is squawking ${squawk} - that means ${meaning}.`
-        : `Emergency, emergency. A plane has put out ${squawk} with the callsign ${callsign} - that means ${meaning}.`;
+        ? `Alert, alert. The callsign ${callsign} is squawking ${spokenSquawk} - that means ${meaning}.`
+        : `Emergency, emergency. A plane has put out ${spokenSquawk} with the callsign ${callsign} - that means ${meaning}.`;
       const utterance = new SpeechSynthesisUtterance(speechText);
       utterance.rate = 1.0;
       utterance.pitch = 1.0;
