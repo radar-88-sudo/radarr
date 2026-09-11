@@ -833,6 +833,8 @@
     function renderFlightBoard(acList) {
       const gridEl = document.getElementById('aircraft-grid');
       if (!gridEl) return;
+
+      const currentScroll = gridEl.scrollTop;
       gridEl.innerHTML = '';
 
       const militaryList = acList.filter(ac => isMilitary(ac));
@@ -867,6 +869,9 @@
         gridEl.appendChild(card);
         fetchCardPhoto(ac, `${cardId}-thumb`);
       });
+
+      // Preserve previous auto-scroll position across data refreshes
+      gridEl.scrollTop = Math.min(currentScroll, gridEl.scrollHeight - gridEl.clientHeight);
     }
 
     function processAutoScroll() {
