@@ -515,7 +515,6 @@
       'EGPD': 'Aberdeen Airport, UK',
       'EGPK': 'Prestwick Airport, UK',
       'EGGD': 'Bristol Airport, UK',
-      'EGKK': 'London Gatwick, UK',
       'EGVN': 'RAF Brize Norton, UK',
       'EGUN': 'RAF Mildenhall, UK',
       'EGVA': 'RAF Fairford, UK',
@@ -569,9 +568,16 @@
 
     /**
      * ADVANCED MULTI-FACTOR ROUTE ESTIMATION ENGINE
-     * Analyses operator prefix, aircraft type, altitude (height), ground speed, and heading/track.
      */
     function resolveFlightRoute(flightStr, ac) {
+      const reg = (ac.r || '').toUpperCase().replace(/-/g, '');
+      const type = (ac.t || '').toUpperCase();
+
+      // Custom Override for GFLOH / C208 Skydive Langar
+      if (reg === 'GFLOH' || reg.includes('FLOH') || (type === 'C208' && reg === 'GFLOH')) {
+        return { fromCode: 'LANGAR SKYDIVE', toCode: 'LANGAR SKYDIVE' };
+      }
+
       if (ac.orig && ac.dest) {
         return { fromCode: ac.orig.toUpperCase(), toCode: ac.dest.toUpperCase() };
       }
@@ -580,29 +586,26 @@
       }
 
       const callsign = (flightStr || '').toUpperCase().trim();
-      const type = (ac.t || '').toUpperCase();
       const alt = ac.alt_baro !== undefined ? ac.alt_baro : 10000;
       const speed = ac.gs !== undefined ? ac.gs : 250;
       const heading = ac.track !== undefined ? ac.track : 0;
       const isMil = isMilitary(ac);
 
-      // 1. Military Heuristics based on operator callsigns & types
       if (isMil) {
         if (callsign.startsWith('RRR') || callsign.startsWith('ASCOT')) {
-          return { fromCode: 'EGVN', toCode: heading > 180 ? 'ETAR' : 'EGUN' }; // RAF Brize Norton tanker/transport corridors
+          return { fromCode: 'EGVN', toCode: heading > 180 ? 'ETAR' : 'EGUN' };
         } else if (callsign.startsWith('SHF') || callsign.startsWith('VORTEX')) {
-          return { fromCode: 'EGXC', toCode: 'EGVN' }; // Fighter / Quick Reaction Alert training vectors
+          return { fromCode: 'EGXC', toCode: 'EGVN' };
         } else if (callsign.startsWith('RCH') || callsign.startsWith('REACH') || callsign.startsWith('DUKE')) {
-          return { fromCode: 'ETAR', toCode: 'EGUN' }; // US Air Mobility Command transatlantic logistics
+          return { fromCode: 'ETAR', toCode: 'EGUN' };
         } else if (callsign.startsWith('BOOM') || callsign.startsWith('ASY')) {
           return { fromCode: 'EGVA', toCode: 'EGVN' };
         } else if (type.includes('CH47') || type.includes('AH64') || type.includes('UH60')) {
-          return { fromCode: 'EGOW', toCode: 'EGVN' }; // Helicopters
+          return { fromCode: 'EGOW', toCode: 'EGVN' };
         }
         return { fromCode: 'EGVN', toCode: 'EGXC' };
       }
 
-      // 2. Low altitude / low speed local traffic / circuits near East Midlands / regional UK
       if (alt < 4000 && speed < 200) {
         if (heading >= 180 && heading < 360) {
           return { fromCode: 'EGNX', toCode: 'EGBB' };
@@ -611,7 +614,6 @@
         }
       }
 
-      // 3. Commercial Airline Callsign Prefix Heuristics
       if (callsign.startsWith('RYR') || callsign.startsWith('RFR')) {
         return { fromCode: 'EGNX', toCode: heading > 90 && heading < 270 ? 'LEMD' : 'EHAM' };
       } else if (callsign.startsWith('EXS') || callsign.startsWith('LS')) {
@@ -628,15 +630,14 @@
         return { fromCode: 'OMDB', toCode: 'EGLL' };
       }
 
-      // 4. Heading & Track Vector Corridor Mapping for un-prefixed traffic
       if (heading >= 315 || heading < 45) {
-        return { fromCode: 'EGCC', toCode: 'EGPH' }; // Northbound corridor
+        return { fromCode: 'EGCC', toCode: 'EGPH' };
       } else if (heading >= 45 && heading < 135) {
-        return { fromCode: 'EGNX', toCode: 'EHAM' }; // Eastbound / European corridor
+        return { fromCode: 'EGNX', toCode: 'EHAM' };
       } else if (heading >= 135 && heading < 225) {
-        return { fromCode: 'EGPH', toCode: 'EGLL' }; // Southbound corridor
+        return { fromCode: 'EGPH', toCode: 'EGLL' };
       } else {
-        return { fromCode: 'EHAM', toCode: 'EIDW' }; // Westbound / Atlantic corridor
+        return { fromCode: 'EHAM', toCode: 'EIDW' };
       }
     }
 
@@ -924,7 +925,7 @@
 
       const civilExclusions = [
         'MM16', 'B407', 'R22', 'R44', 'AS35', 'EC35', 'EC45', 'H125', 'H135', 
-        'B206', 'C172', 'PA28', 'SR20', 'SR22', 'C152', 'DA40', 'DA42', 'AS50'
+        'B206', 'C172', 'PA28', 'SR20', 'SR22', 'C152', 'DA40', 'DA42', 'AS50', 'C208'
       ];
       if (civilExclusions.some(ex => type.includes(ex))) return false;
 
@@ -1089,8 +1090,13 @@
       }
 
       const route = resolveFlightRoute(flightStr, lockedAircraft);
-      document.getElementById('sb-from').innerHTML = `<b>${route.fromCode}</b> — <span style="color:var(--text-dim);">${airportDatabase[route.fromCode] || 'Aerodrome'}</span>`;
-      document.getElementById('sb-to').innerHTML = `<b>${route.toCode}</b> — <span style="color:var(--text-dim);">${airportDatabase[route.toCode] || 'Aerodrome'}</span>`;
+      if (route.fromCode === 'LANGAR SKYDIVE') {
+        document.getElementById('sb-from').innerHTML = `<b>LANGAR SKYDIVE</b>`;
+        document.getElementById('sb-to').innerHTML = `<b>LANGAR SKYDIVE</b>`;
+      } else {
+        document.getElementById('sb-from').innerHTML = `<b>${route.fromCode}</b> — <span style="color:var(--text-dim);">${airportDatabase[route.fromCode] || 'Aerodrome'}</span>`;
+        document.getElementById('sb-to').innerHTML = `<b>${route.toCode}</b> — <span style="color:var(--text-dim);">${airportDatabase[route.toCode] || 'Aerodrome'}</span>`;
+      }
 
       fetchLiveFlightRoute(lockedAircraft.flight).then(liveRoute => {
         if (liveRoute && liveRoute.fromCode && liveRoute.toCode) {
