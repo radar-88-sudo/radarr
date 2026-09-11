@@ -1216,11 +1216,13 @@
     // ---------------------------------------------------------------------
     // UFO easter egg: typing "ufo" on the keyboard (once the feed has started) spawns a fake
     // unidentified contact a few NM out, same TTL/merge pattern as the test-squawk injector
-    // above. It's deliberately unremarkable - placeholder altitude/speed, the REGISTRATION_OVERRIDES
-    // 'UFO1' badge (see fetchAircraftPhoto) instead of a real airline logo, and no dedicated
-    // silhouette (type "UFO" doesn't match anything in pw-silhouettes, so it just falls back to
-    // the default airliner glyph). Most sightings squawk a normal 1200; some fraction squawk
-    // 7700 instead so it occasionally takes over the scrollboard/siren like a real emergency.
+    // above. Type "UFO" (ac.t) runs through the exact same getPwSilhouette() lookup as any real
+    // aircraft, so it picks up pw-silhouettes' own UFO artwork once it's loaded (a poll or two
+    // after first appearing) - no special-casing needed here, same as everything else it draws.
+    // The rest is deliberately unremarkable: placeholder altitude/speed, and the
+    // REGISTRATION_OVERRIDES 'UFO1' badge (see fetchAircraftPhoto) instead of a real airline
+    // logo. Most sightings squawk a normal 1200; some fraction squawk 7700 instead so it
+    // occasionally takes over the scrollboard/siren like a real emergency.
     // ---------------------------------------------------------------------
     const UFO_AIRCRAFT_TTL_MS = 90000;
     const UFO_SQUAWK_7700_CHANCE = 0.3;
