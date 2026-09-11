@@ -498,6 +498,12 @@
     let audioCtx = null;
     let feedStarted = false;
 
+    // Debug/testing hook: a synthetic aircraft that gets merged into every poll's results
+    // for a limited time, so the emergency-lock path (scrollboard override, red pulse, tone,
+    // speech) can be exercised without waiting for a real squawk. See triggerTestSquawk().
+    let testAircraft = null;
+    let testAircraftExpiryAt = 0;
+
     // callsign -> {fromCode, toCode, fromName, toName, source: 'adsbdb'|'hexdb'|'estimated'},
     // or null once every source has been queried and confirmed there's no real data
     // (avoids re-querying every poll for callsigns nobody has data on)
@@ -564,7 +570,20 @@
       requestAnimationFrame(drawRadarScope);
       fetchLiveFlights();
       setInterval(fetchLiveFlights, 12000);
+
+      // Test-squawk via URL, e.g. radar.html?testsquawk=7700 - handy from mobile where
+      // there's no keyboard for the shortcut below.
+      const testParam = new URLSearchParams(window.location.search).get('testsquawk');
+      if (testParam) triggerTestSquawk(testParam);
     }
+
+    // Keyboard shortcut for testing the emergency-lock path at a desktop: 5/6/7 -> 7500/7600/7700.
+    document.addEventListener('keydown', (e) => {
+      if (!feedStarted) return;
+      if (e.key === '5') triggerTestSquawk('7500');
+      else if (e.key === '6') triggerTestSquawk('7600');
+      else if (e.key === '7') triggerTestSquawk('7700');
+    });
 
 
     const aircraftModelNames = {
@@ -882,6 +901,53 @@
       return EMERGENCY_SQUAWKS.includes(ac.squawk);
     }
 
+    // ---------------------------------------------------------------------
+    // Test-squawk injector: for exercising the emergency-lock path (scrollboard override,
+    // red pulse, tone, speech) without waiting for a real 7500/7600/7700. Trigger via:
+    //   - browser console: triggerTestSquawk('7700')
+    //   - URL param on load: radar.html?testsquawk=7700
+    //   - keyboard: press 5 / 6 / 7 once the feed has started
+    // The fake aircraft is merged into liveAircraft on every poll for TEST_AIRCRAFT_TTL_MS,
+    // then expires on its own - no cleanup step needed.
+    // ---------------------------------------------------------------------
+    const TEST_AIRCRAFT_TTL_MS = 90000;
+
+    function buildTestAircraft(squawk) {
+      const bearingRad = Math.random() * 2 * Math.PI;
+      const distNM = 3 + Math.random() * 8; // a few NM out, well inside the 35 NM scope
+      const dLat = (distNM / 60) * Math.cos(bearingRad);
+      const dLon = (distNM / 60) * Math.sin(bearingRad) / Math.cos(userConfig.lat * Math.PI / 180);
+      return {
+        // Random suffix so announcedEmergencyHexes/pulsed sets don't swallow repeat tests.
+        hex: 'TEST' + Math.floor(Math.random() * 9000 + 1000),
+        flight: 'TESTSQK ',
+        lat: userConfig.lat + dLat,
+        lon: userConfig.lon + dLon,
+        alt_baro: 12000,
+        gs: 280,
+        track: Math.floor(Math.random() * 360),
+        squawk: squawk,
+        t: 'B738',
+        category: 'A3'
+      };
+    }
+
+    function triggerTestSquawk(squawk) {
+      squawk = String(squawk || '7700');
+      if (!EMERGENCY_SQUAWKS.includes(squawk)) {
+        console.warn(`[TEST] "${squawk}" isn't 7500/7600/7700 - defaulting to 7700`);
+        squawk = '7700';
+      }
+      testAircraft = buildTestAircraft(squawk);
+      testAircraftExpiryAt = Date.now() + TEST_AIRCRAFT_TTL_MS;
+      console.log(`[TEST] Injecting fake squawk ${squawk} aircraft (${testAircraft.hex}) for ${TEST_AIRCRAFT_TTL_MS / 1000}s`);
+
+      // Apply immediately rather than waiting for the next 12s poll.
+      liveAircraft = liveAircraft.filter(a => !a.hex || !a.hex.startsWith('TEST')).concat([testAircraft]);
+      updateUIState(true);
+    }
+    window.triggerTestSquawk = triggerTestSquawk;
+
     // The only place a route (From/To) is ever displayed is the scrollboard, locked onto
     // whichever aircraft is selected below. Route lookups should only ever target that one
     // aircraft - never the whole liveAircraft list, or we flood adsbdb/hexdb with lookups
@@ -1070,7 +1136,17 @@
               // Drop these before anything else, or they can end up "nearest" (distance ~0)
               // and lock the scrollboard onto a fake target.
               liveAircraft = aircrafts.filter(ac => !/^0+$/.test(ac.hex || '') && (ac.t || '').toUpperCase() !== 'TWR');
-              
+
+              // Keep the injected test-squawk aircraft (see triggerTestSquawk) alive across
+              // polls until it expires, so a real fetch cycle doesn't wipe it out mid-test.
+              if (testAircraft) {
+                if (Date.now() < testAircraftExpiryAt) {
+                  liveAircraft = liveAircraft.concat([testAircraft]);
+                } else {
+                  testAircraft = null;
+                }
+              }
+
               liveAircraft.forEach(ac => {
                 if (!ac.hex || !ac.lat || !ac.lon) return;
                 if (!aircraftTrails[ac.hex]) aircraftTrails[ac.hex] = [];
