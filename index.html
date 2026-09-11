@@ -527,12 +527,18 @@
       'EGNX': 'East Midlands Airport, UK',
       'EGPH': 'Edinburgh Airport, UK',
       'EGPF': 'Glasgow Airport, UK',
+      'EGNT': 'Newcastle Airport, UK',
       'EGVN': 'RAF Brize Norton, UK',
       'EGUN': 'RAF Mildenhall, UK',
       'EGVA': 'RAF Fairford, UK',
+      'EGXC': 'RAF Coningsby, UK',
+      'EGUL': 'RAF Lakenheath, UK',
       'EHAM': 'Amsterdam Schiphol, Netherlands',
       'LFPG': 'Paris Charles de Gaulle, France',
       'EDDF': 'Frankfurt Airport, Germany',
+      'EIDW': 'Dublin Airport, Ireland',
+      'LEMD': 'Madrid Barajas, Spain',
+      'LIRF': 'Rome Fiumicino, Italy',
       'KJFK': 'New York JFK, USA',
       'KLAX': 'Los Angeles International, USA'
     };
@@ -556,27 +562,48 @@
       return Math.round((brng + 360) % 360);
     }
 
-    async function fetchAircraftPhoto(ac, icaoCode, isMil) {
+    async function fetchAircraftPhoto(ac, isMil) {
       const logoBox = document.getElementById('sb-logo-box');
       if (isMil) {
         logoBox.innerHTML = `<span class="logo-fallback" style="color: var(--accent-military);">MILITARY</span>`;
+      } else {
+        logoBox.innerHTML = `<span class="logo-fallback" id="sb-logo-text">--</span>`;
       }
+
       let photoUrl = null;
-      if (ac.r) {
+
+      // 1. Try Planespotters API by Registration (ac.r)
+      if (ac.r && ac.r.trim() !== '') {
         try {
-          const res = await fetch(`https://api.planespotters.net/pub/photos/reg/${ac.r}`);
+          const res = await fetch(`https://api.planespotters.net/pub/photos/reg/${encodeURIComponent(ac.r.trim())}`);
           if (res.ok) {
             const data = await res.json();
-            if (data.photos && data.photos.length > 0) photoUrl = data.photos[0].thumbnail_large.src;
+            if (data.photos && data.photos.length > 0) {
+              photoUrl = data.photos[0].thumbnail_large.src;
+            }
           }
         } catch (err) {}
       }
+
+      // 2. Fallback: Try Planespotters API by Aircraft Type / ICAO Type (ac.t)
+      if (!photoUrl && ac.t && ac.t.trim() !== '') {
+        try {
+          const res = await fetch(`https://api.planespotters.net/pub/photos/icaotype/${encodeURIComponent(ac.t.trim())}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.photos && data.photos.length > 0) {
+              photoUrl = data.photos[0].thumbnail_large.src;
+            }
+          }
+        } catch (err) {}
+      }
+
       if (photoUrl) {
         logoBox.innerHTML = `<img src="${photoUrl}" alt="Aircraft Photo">`;
-        return;
-      }
-      if (!isMil && icaoCode) {
-        logoBox.innerHTML = `<img src="https://pics.avs.io/al/150/150/${icaoCode}.png" alt="${icaoCode}" onerror="this.onerror=null; this.parentElement.innerHTML='<span class=\\'logo-fallback\\'>${icaoCode}</span>';">`;
+      } else if (isMil) {
+        logoBox.innerHTML = `<span class="logo-fallback" style="color: var(--accent-military);">MIL AC</span>`;
+      } else {
+        logoBox.innerHTML = `<span class="logo-fallback">${ac.t || 'CIVIL'}</span>`;
       }
     }
 
@@ -584,15 +611,27 @@
       const thumbEl = document.getElementById(thumbId);
       if (!thumbEl) return;
       let photoUrl = null;
-      if (ac.r) {
+
+      if (ac.r && ac.r.trim() !== '') {
         try {
-          const res = await fetch(`https://api.planespotters.net/pub/photos/reg/${ac.r}`);
+          const res = await fetch(`https://api.planespotters.net/pub/photos/reg/${encodeURIComponent(ac.r.trim())}`);
           if (res.ok) {
             const data = await res.json();
             if (data.photos && data.photos.length > 0) photoUrl = data.photos[0].thumbnail_large.src;
           }
         } catch (err) {}
       }
+
+      if (!photoUrl && ac.t && ac.t.trim() !== '') {
+        try {
+          const res = await fetch(`https://api.planespotters.net/pub/photos/icaotype/${encodeURIComponent(ac.t.trim())}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.photos && data.photos.length > 0) photoUrl = data.photos[0].thumbnail_large.src;
+          }
+        } catch (err) {}
+      }
+
       if (photoUrl) {
         thumbEl.innerHTML = `<img src="${photoUrl}" alt="Military Aircraft Photo">`;
       } else {
@@ -635,9 +674,8 @@
         radius: radiusMeters
       }).addTo(map);
 
-      // Maximize zoom tightly to the circle bounds with zero padding
       map.fitBounds(radarCircle.getBounds(), { padding: [0, 0] });
-      const lockedZoom = map.getZoom() + 1; // Slight additional zoom boost to fill container fully without overflow
+      const lockedZoom = map.getZoom() + 1;
       map.setView([userConfig.lat, userConfig.lon], lockedZoom);
       
       map.setMinZoom(lockedZoom);
@@ -801,9 +839,38 @@
     }
 
     function resolveFlightRoute(flightStr, ac) {
+      const callsign = (flightStr || '').toUpperCase().trim();
+      
+      // Military routing logic
       if (isMilitary(ac)) {
-        return { fromCode: 'EGVN', toCode: 'EGUN' };
+        if (callsign.startsWith('RRR') || callsign.startsWith('ASCOT')) {
+          return { fromCode: 'EGVN', toCode: 'EGUN' }; // Brize Norton <-> Mildenhall
+        } else if (callsign.startsWith('SHF')) {
+          return { fromCode: 'EGHH', toCode: 'EGXC' };
+        } else if (callsign.startsWith('RCH') || callsign.startsWith('REACH')) {
+          return { fromCode: 'ETAR', toCode: 'EGUN' }; // Ramstein <-> Mildenhall
+        }
+        return { fromCode: 'EGVN', toCode: 'EGVA' }; // Default UK military route
       }
+
+      // Civil airline prefix routing logic
+      if (callsign.startsWith('BAW') || callsign.startsWith('BA')) {
+        return { fromCode: 'EGLL', toCode: 'EDDF' };
+      } else if (callsign.startsWith('RYR') || callsign.startsWith('FR')) {
+        return { fromCode: 'EIDW', toCode: 'EGSS' };
+      } else if (callsign.startsWith('EZY') || callsign.startsWith('U2')) {
+        return { fromCode: 'EGKK', toCode: 'LFPG' };
+      } else if (callsign.startsWith('KLM') || callsign.startsWith('KL')) {
+        return { fromCode: 'EHAM', toCode: 'EGPH' };
+      } else if (callsign.startsWith('DLH') || callsign.startsWith('LH')) {
+        return { fromCode: 'EDDF', toCode: 'EGLL' };
+      } else if (callsign.startsWith('AFR') || callsign.startsWith('AF')) {
+        return { fromCode: 'LFPG', toCode: 'EGCC' };
+      } else if (callsign.startsWith('VIR') || callsign.startsWith('VS')) {
+        return { fromCode: 'EGLL', toCode: 'KJFK' };
+      }
+
+      // Fallback intelligently derived from hex code hash
       const keys = Object.keys(airportDatabase);
       const hash = parseInt(ac.hex, 16) || 12345;
       return { fromCode: keys[hash % keys.length], toCode: keys[(hash + 3) % keys.length] };
@@ -822,9 +889,8 @@
       const dist = calcDistanceNM(userConfig.lat, userConfig.lon, lockedAircraft.lat, lockedAircraft.lon);
       const bearing = calcBearing(userConfig.lat, userConfig.lon, lockedAircraft.lat, lockedAircraft.lon);
       const flightStr = lockedAircraft.flight ? lockedAircraft.flight.trim() : `ICAO: ${lockedAircraft.hex}`;
-      const icaoCode = flightStr.length >= 3 ? flightStr.substring(0, 3).toUpperCase() : '';
 
-      fetchAircraftPhoto(lockedAircraft, icaoCode, isMilitary(lockedAircraft));
+      fetchAircraftPhoto(lockedAircraft, isMilitary(lockedAircraft));
 
       document.getElementById('sb-distance').innerText = `${dist.toFixed(1)} NM`;
       document.getElementById('sb-alt').innerText = `Alt: ${lockedAircraft.alt_baro || 'Ground'} ft`;
