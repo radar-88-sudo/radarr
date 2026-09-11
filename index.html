@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Live ADSB Airspace Scope (Retro Radar Wall Board)</title>
   
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
 
   <style>
     :root {
@@ -429,10 +429,11 @@
     </div>
   </footer>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"
+          onerror="document.getElementById('connection-status').innerText='LEAFLET FAILED TO LOAD - CHECK NETWORK'; document.getElementById('connection-status').style.color='#ff3333';"></script>
 
   <script>
-    const userConfig = { lat: 52.9529, lon: -0.9547, radiusNM: 500 };
+    const userConfig = { lat: 52.9529, lon: -0.9547, radiusNM: 250 }; // adsb.lol /v2/point/ caps at 250 NM
     let map = null;
     let canvas = null;
     let ctx = null;
@@ -883,9 +884,10 @@
       if (isFetching) return;
       isFetching = true;
 
+      // airplanes.live's public /v2/point/ endpoint now requires a feeder-linked API key
+      // (returns 403 for unauthenticated requests) - dropped as a fallback.
       const endpoints = [
-        `https://api.adsb.lol/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`,
-        `https://api.airplanes.live/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`
+        `https://api.adsb.lol/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`
       ];
       let success = false;
 
