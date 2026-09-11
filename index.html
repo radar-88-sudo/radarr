@@ -157,12 +157,12 @@
       overflow-y: auto;
       padding-right: 2px;
       min-height: 0;
-      scrollbar-width: none; /* Firefox */
-      -ms-overflow-style: none; /* IE/Edge */
+      scrollbar-width: none;
+      -ms-overflow-style: none;
     }
 
     .aircraft-grid::-webkit-scrollbar {
-      display: none; /* Chrome/Safari/Opera */
+      display: none;
     }
 
     .ac-card {
@@ -362,12 +362,10 @@
 
   <footer>
     <div class="scrollboard">
-      <!-- Col 1: Photo / Logo -->
       <div class="logo-container" id="sb-logo-box">
         <span class="logo-fallback" id="sb-logo-text">--</span>
       </div>
 
-      <!-- Col 2: Ident & Routing -->
       <div class="banner-col">
         <div id="sb-airline" class="airline-heading">AWAITING LOCK</div>
         <div id="sb-type" class="aircraft-meta">Type: --</div>
@@ -383,7 +381,6 @@
         </div>
       </div>
 
-      <!-- Col 3: Distance & Kinematics -->
       <div class="banner-col metric-group">
         <div class="sub-title">Range & Kinematics</div>
         <div id="sb-distance" class="primary-metric">-- NM</div>
@@ -391,7 +388,6 @@
         <div id="sb-speed" class="secondary-metric">Spd: -- kts</div>
       </div>
 
-      <!-- Col 4: Vector & Vertical Rate -->
       <div class="banner-col metric-group">
         <div class="sub-title">Vector & V/S</div>
         <div id="sb-rate" class="secondary-metric" style="font-weight: 700;">Rate: --</div>
@@ -399,7 +395,6 @@
         <div id="sb-bearing" class="secondary-metric" style="font-size:0.72rem; color:var(--text-dim);">Bearing: --°</div>
       </div>
 
-      <!-- Col 5: Transponder & Hex ID -->
       <div class="banner-col metric-group">
         <div class="sub-title">Transponder ID</div>
         <div id="sb-squawk" class="secondary-metric" style="font-weight:700;">Squawk: ----</div>
@@ -426,9 +421,9 @@
     const announcedMilHexes = new Set();
     let audioCtx = null;
 
-    let scrollState = 'PAUSED_TOP'; // 'PAUSED_TOP', 'SCROLLING', 'PAUSED_BOTTOM'
-    let scrollTimer = 120; // 2 seconds initial pause at the top
-    let internalScrollPos = 0; // Float accumulator to bypass browser rounding
+    let scrollState = 'PAUSED_TOP';
+    let scrollTimer = 120;
+    let internalScrollPos = 0;
 
     function initKioskAudio() {
       try {
@@ -512,22 +507,26 @@
       if (announcedMilHexes.has(ac.hex)) return;
 
       announcedMilHexes.add(ac.hex);
-      playAlertTone();
+      playAlertTone(); // Always beep for ANY new military aircraft in the 35 NM range
 
-      setTimeout(() => {
-        const modelName = getAircraftModelName(ac.t);
-        const country = getCountryFromHex(ac.hex);
-        const callsign = ac.flight ? ac.flight.trim() : 'Unknown callsign';
-        
-        const speechText = `Attention. Military aircraft detected. Callsign ${callsign}. Model: ${modelName}, from ${country}.`;
-        
-        if ('speechSynthesis' in window) {
-          const utterance = new SpeechSynthesisUtterance(speechText);
-          utterance.rate = 1.0;
-          utterance.pitch = 1.0;
-          window.speechSynthesis.speak(utterance);
-        }
-      }, 350);
+      // Check distance for voice announcement (only speak out if <= 5 NM away)
+      const dist = calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon);
+      if (dist <= 5.0) {
+        setTimeout(() => {
+          const modelName = getAircraftModelName(ac.t);
+          const country = getCountryFromHex(ac.hex);
+          const callsign = ac.flight ? ac.flight.trim() : 'Unknown callsign';
+          
+          const speechText = `Proximity alert. Military aircraft Callsign ${callsign} is ${dist.toFixed(1)} miles away. Model: ${modelName}, from ${country}.`;
+          
+          if ('speechSynthesis' in window) {
+            const utterance = new SpeechSynthesisUtterance(speechText);
+            utterance.rate = 1.0;
+            utterance.pitch = 1.0;
+            window.speechSynthesis.speak(utterance);
+          }
+        }, 350);
+      }
     }
 
     const airportDatabase = {
@@ -872,7 +871,6 @@
         fetchCardPhoto(ac, `${cardId}-thumb`);
       });
 
-      // Preserve viewing position and sync float accumulator
       gridEl.scrollTop = Math.min(currentScroll, gridEl.scrollHeight - gridEl.clientHeight);
       internalScrollPos = gridEl.scrollTop;
     }
@@ -903,19 +901,17 @@
           internalScrollPos = 0;
           grid.scrollTop = 0;
           scrollState = 'PAUSED_TOP';
-          scrollTimer = 120; // Exact 2 second pause at the top
+          scrollTimer = 120;
         }
         return;
       }
 
-      // Increment float accumulator smoothly (0.35 pixels per frame)
       internalScrollPos += 0.35;
       grid.scrollTop = internalScrollPos;
 
-      // Check if reached the bottom
       if (grid.scrollTop >= maxScroll - 1 || internalScrollPos >= maxScroll) {
         scrollState = 'PAUSED_BOTTOM';
-        scrollTimer = 120; // Exact 2 second pause at the bottom (120 frames at 60 FPS)
+        scrollTimer = 120;
         internalScrollPos = maxScroll;
         grid.scrollTop = maxScroll;
       }
