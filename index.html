@@ -432,7 +432,7 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <script>
-    const userConfig = { lat: 52.9529, lon: -0.9547, radiusNM: 35 };
+    const userConfig = { lat: 52.9529, lon: -0.9547, radiusNM: 500 };
     let map = null;
     let canvas = null;
     let ctx = null;
@@ -458,6 +458,12 @@
       "dont pull your willy too hard in excitement now!",
       "heads up troops, things are getting spicy!",
       "dont jizz too much in your pants but there is a",
+      "shit's about to get real, we've got a",
+      "hold my beer, im tracking a",
+      "look alive dumbass, incoming",
+      "no wanking on the job, we've got a",
+      "put your pants back on! we've got a",
+      "is it a bird? is it a plane? no well kind of, its a fucking",
       "well spank my ass and call me amy as there is a"
     ];
 
@@ -634,7 +640,7 @@
       const dist = calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon);
       let triggeredPulse = false;
 
-      if (dist <= 5.0 && !pulsed5Hexes.has(ac.hex)) {
+      if (dist <= 500.0 && !pulsed5Hexes.has(ac.hex)) {
         pulsed5Hexes.add(ac.hex);
         pulsed35Hexes.add(ac.hex);
         triggeredPulse = true;
