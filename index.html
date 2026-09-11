@@ -560,6 +560,119 @@
     // Simple in-memory photo cache so we don't re-fetch the same aircraft's photo every 12s poll
     const photoCache = {}; // key -> url string, or null for known-empty
 
+    // ---------------------------------------------------------------------
+    // Radar-scope silhouettes: plane-watch/pw-silhouettes (CC BY-NC-SA 4.0 -
+    // https://github.com/plane-watch/pw-silhouettes). Each ICAO type designator
+    // (the same string airplanes.live/adsb.lol return as ac.t, e.g. "B738") has
+    // an airframes/{DESIGNATOR}.json describing which silhouettes/*.svg frame(s)
+    // to draw, an anchor point, a scale, and whether it should ignore heading
+    // rotation - plus an optional aliasOf pointing at another designator whose
+    // artwork should be reused as-is. See CONTRIBUTING.md in that repo for the
+    // full schema. Resolution/loading is async and this repo's library only
+    // covers a subset of real-world types, so every aircraft is drawn with the
+    // existing hand-drawn vector glyph (getSilhouetteType/drawAircraftSilhouettePath,
+    // see below) the first time it's seen, and silently upgraded to the real
+    // silhouette a poll or two later once it's finished loading - nothing ever
+    // blocks on the network here.
+    // ---------------------------------------------------------------------
+    const PW_SILHOUETTES_BASE = 'https://raw.githubusercontent.com/plane-watch/pw-silhouettes/main';
+
+    // designator -> resolved render info ({frames:[svgPath,...], frameTime, anchor:{x,y}, scale, noRotate}),
+    // or null once confirmed this repo has no airframe entry for it (incl. after following aliasOf).
+    const pwAirframeCache = {};
+    // ICAO designator -> in-flight/parsed airframe JSON, or null for a confirmed 404.
+    const pwAirframeJsonCache = {};
+    // silhouettes/X.svg path -> Promise<rawSvgText>, shared across every colour variant of that frame.
+    const pwRawSvgTextCache = {};
+    // `${designator}|${colorHex}` -> 'loading', null (failed/unavailable), or {images:[HTMLImageElement,...], meta}.
+    const pwColoredFrameCache = {};
+
+    async function fetchPwAirframeJson(designator) {
+      if (pwAirframeJsonCache[designator] !== undefined) return pwAirframeJsonCache[designator];
+      try {
+        const res = await fetch(`${PW_SILHOUETTES_BASE}/airframes/${designator}.json`);
+        if (!res.ok) {
+          pwAirframeJsonCache[designator] = null;
+          return null;
+        }
+        pwAirframeJsonCache[designator] = await res.json();
+      } catch (err) {
+        pwAirframeJsonCache[designator] = null;
+      }
+      return pwAirframeJsonCache[designator];
+    }
+
+    // Resolves a designator to concrete render info, following aliasOf (alias files can omit
+    // render/art entirely and just inherit the canonical designator's artwork - see CONTRIBUTING.md).
+    // depth guards against an accidental alias cycle in the source data.
+    async function resolvePwAirframe(designator, depth = 0) {
+      if (depth > 4) return null;
+      const json = await fetchPwAirframeJson(designator);
+      if (!json) return null;
+      if (json.aliasOf) return resolvePwAirframe(json.aliasOf, depth + 1);
+      if (!json.art || !Array.isArray(json.art.frames) || json.art.frames.length === 0) return null;
+      return {
+        frames: json.art.frames.map(f => f.src),
+        frameTime: json.art.frameTime || null,
+        anchor: (json.render && json.render.anchor) || { x: 35, y: 35 },
+        scale: (json.render && json.render.scale) || 1,
+        noRotate: !!(json.render && json.render.noRotate)
+      };
+    }
+
+    // Loads one silhouettes/*.svg frame, recoloured to the given hex colour, as an <img>.
+    // Per CONTRIBUTING.md every visible shape in these SVGs is filled #ffffff / stroked #000000,
+    // so a straight string substitution is enough - swap the fill for whichever scope colour this
+    // aircraft should render in, and the stroke for the canvas background so it reads as a thin
+    // outline rather than a hard black border (matching the existing hand-drawn glyphs' style).
+    async function loadPwSilhouetteFrame(svgPath, colorHex) {
+      if (!pwRawSvgTextCache[svgPath]) {
+        pwRawSvgTextCache[svgPath] = fetch(`${PW_SILHOUETTES_BASE}/${svgPath}`).then(res => {
+          if (!res.ok) throw new Error(`pw-silhouettes: ${svgPath} not found`);
+          return res.text();
+        });
+      }
+      const svgText = await pwRawSvgTextCache[svgPath];
+      const recolored = svgText
+        .replace(/#ffffff/gi, colorHex)
+        .replace(/#000000/gi, '#020704');
+      const dataUrl = 'data:image/svg+xml;utf8,' + encodeURIComponent(recolored);
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error(`pw-silhouettes: failed to decode ${svgPath}`));
+        img.src = dataUrl;
+      });
+    }
+
+    // Kicks off (once) resolving + loading every frame for designator/colorHex, returning
+    // whatever's known synchronously so the render loop never has to await: 'loading' while
+    // in flight, null once confirmed unavailable, or the finished {images, meta} bundle.
+    function getPwSilhouette(designator, colorHex) {
+      const cacheKey = `${designator}|${colorHex}`;
+      const cached = pwColoredFrameCache[cacheKey];
+      if (cached !== undefined) return cached;
+
+      pwColoredFrameCache[cacheKey] = 'loading';
+      (async () => {
+        try {
+          if (pwAirframeCache[designator] === undefined) {
+            pwAirframeCache[designator] = await resolvePwAirframe(designator);
+          }
+          const meta = pwAirframeCache[designator];
+          if (!meta) {
+            pwColoredFrameCache[cacheKey] = null;
+            return;
+          }
+          const images = await Promise.all(meta.frames.map(src => loadPwSilhouetteFrame(src, colorHex)));
+          pwColoredFrameCache[cacheKey] = { images, meta };
+        } catch (err) {
+          pwColoredFrameCache[cacheKey] = null;
+        }
+      })();
+      return 'loading';
+    }
+
     let scrollState = 'PAUSED_TOP';
     let scrollTimer = 120;
     let internalScrollPos = 0;
@@ -1945,20 +2058,58 @@
             ctx.stroke();
           }
 
-          ctx.save();
-          ctx.translate(pt.x, pt.y);
           const heading = ac.track !== undefined ? ac.track : 0;
-          ctx.rotate((heading * Math.PI) / 180);
+          const silColor = isEmg ? '#ff3333' : (isQra || isMil ? '#ffb000' : '#00ff66');
 
-          const silhouetteType = getSilhouetteType(ac.t, ac.category);
-          drawAircraftSilhouettePath(ctx, silhouetteType);
+          // Prefer the real plane-watch/pw-silhouettes artwork for this ICAO type designator
+          // once it's finished loading; kick off loading it either way (harmless/no-op if
+          // already loading, loaded, or confirmed unavailable for this designator+colour).
+          let drewPwSilhouette = false;
+          const typeDesignator = (ac.t || '').trim().toUpperCase();
+          if (typeDesignator) {
+            const pwSil = getPwSilhouette(typeDesignator, silColor);
+            if (pwSil && pwSil !== 'loading' && pwSil.images && pwSil.images.length) {
+              const { images, meta } = pwSil;
+              const frameIdx = meta.frameTime
+                ? Math.floor(Date.now() / meta.frameTime) % images.length
+                : 0;
+              const img = images[frameIdx];
+              if (img && img.complete && img.naturalWidth) {
+                // Source SVGs are a 70x70px cell; scale to roughly the same on-scope footprint
+                // as the hand-drawn glyphs below, then let each airframe's own `scale` (bigger
+                // for e.g. an A380, smaller for a light single) adjust from there.
+                const cellPx = 14 * meta.scale;
+                ctx.save();
+                ctx.translate(pt.x, pt.y);
+                if (!meta.noRotate) ctx.rotate((heading * Math.PI) / 180);
+                ctx.drawImage(
+                  img,
+                  -(meta.anchor.x / 70) * cellPx,
+                  -(meta.anchor.y / 70) * cellPx,
+                  cellPx,
+                  cellPx
+                );
+                ctx.restore();
+                drewPwSilhouette = true;
+              }
+            }
+          }
 
-          ctx.fillStyle = isEmg ? '#ff3333' : (isQra || isMil ? '#ffb000' : '#00ff66');
-          ctx.fill();
-          ctx.lineWidth = 0.8;
-          ctx.strokeStyle = '#020704';
-          ctx.stroke();
-          ctx.restore();
+          if (!drewPwSilhouette) {
+            ctx.save();
+            ctx.translate(pt.x, pt.y);
+            ctx.rotate((heading * Math.PI) / 180);
+
+            const silhouetteType = getSilhouetteType(ac.t, ac.category);
+            drawAircraftSilhouettePath(ctx, silhouetteType);
+
+            ctx.fillStyle = silColor;
+            ctx.fill();
+            ctx.lineWidth = 0.8;
+            ctx.strokeStyle = '#020704';
+            ctx.stroke();
+            ctx.restore();
+          }
 
           ctx.fillStyle = isEmg ? '#ff3333' : (isQra || isMil ? '#ffb000' : '#3a7bff');
           ctx.font = 'bold 9px system-ui';
