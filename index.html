@@ -266,16 +266,23 @@
       background: var(--card-bg);
       border: 1px solid var(--card-border);
       border-radius: 8px;
-      display: grid;
-      grid-template-columns: 105px 1.1fr 1.2fr 1fr 1fr;
+      display: flex;
       align-items: center;
       overflow: hidden;
       box-shadow: 0 0 15px rgba(0, 0, 0, 0.8);
     }
 
+    /* Sized by its own content: with a real photo, width follows the image's natural aspect
+       ratio scaled to the full footer height (see .logo-container img) - "full size", not
+       cropped to a fixed box like the old 105px column. min-width keeps it from collapsing
+       to nothing in the text-fallback (no photo) state; max-width stops an unusually wide/
+       panoramic photo from swallowing the metric columns next to it. The banner-col flex
+       items (flex: 1 1 0, below) reflow to fill whatever space is left over automatically. */
     .logo-container {
-      width: 100%;
+      flex: 0 1 auto;
       height: 100%;
+      min-width: 110px;
+      max-width: 62%;
       background: rgba(2, 8, 4, 0.95);
       border-right: 1px solid var(--card-border);
       display: flex;
@@ -285,9 +292,11 @@
     }
 
     .logo-container img {
-      width: 100%;
       height: 100%;
-      object-fit: cover;
+      width: auto;
+      max-width: 100%;
+      object-fit: contain;
+      display: block;
     }
 
     .logo-fallback {
@@ -301,6 +310,8 @@
     }
 
     .banner-col {
+      flex: 1 1 0;
+      min-width: 0;
       padding: 0.3rem 0.5rem;
       display: flex;
       flex-direction: column;
@@ -481,13 +492,6 @@
         <div id="sb-rate" class="secondary-metric" style="font-weight: 700;">Rate: --</div>
         <div id="sb-heading" class="secondary-metric">Hdng: --°</div>
         <div id="sb-bearing" class="secondary-metric" style="font-size:0.72rem; color:var(--text-dim);">Bearing: --°</div>
-      </div>
-
-      <div class="banner-col metric-group">
-        <div class="sub-title">Transponder ID</div>
-        <div id="sb-squawk" class="secondary-metric" style="font-weight:700;">Squawk: ----</div>
-        <div id="sb-hex" class="secondary-metric" style="font-size:0.72rem; color:var(--text-dim);">Hex: --</div>
-        <div id="sb-reg" class="secondary-metric" style="font-size:0.72rem; color:var(--accent-military);">Reg: --</div>
       </div>
     </div>
   </footer>
@@ -1333,15 +1337,6 @@
       const heading = lockedAircraft.track !== undefined ? Math.round(lockedAircraft.track) : '--';
       document.getElementById('sb-heading').innerText = `Hdng: ${heading}°`;
       document.getElementById('sb-bearing').innerText = `Bearing: ${bearing}°`;
-      
-      const squawkCode = lockedAircraft.squawk || '----';
-      let squawkDisplay = squawkCode;
-      if (squawkCode === '7700') squawkDisplay = '7700 (EMERGENCY)';
-      else if (squawkCode === '7600') squawkDisplay = '7600 (RADIO FAIL)';
-      else if (squawkCode === '7500') squawkDisplay = '7500 (HIJACK)';
-      document.getElementById('sb-squawk').innerText = `Squawk: ${squawkDisplay}`;
-      document.getElementById('sb-hex').innerText = `Hex: ${lockedAircraft.hex || '--'}`;
-      document.getElementById('sb-reg').innerText = `Reg: ${lockedAircraft.r || 'Unassigned'}`;
 
       const vertRate = lockedAircraft.baro_rate !== undefined ? lockedAircraft.baro_rate : 0;
       const rateEl = document.getElementById('sb-rate');
