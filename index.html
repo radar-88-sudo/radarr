@@ -635,8 +635,9 @@
         radius: radiusMeters
       }).addTo(map);
 
+      // Removed the "+ 1" to properly fit the 50NM circle without clipping
       map.fitBounds(radarCircle.getBounds(), { padding: [15, 15] });
-      const lockedZoom = map.getZoom() + 1;
+      const lockedZoom = map.getZoom();
       map.setView([userConfig.lat, userConfig.lon], lockedZoom);
       
       map.setMinZoom(lockedZoom);
@@ -651,11 +652,19 @@
       const rect = container.getBoundingClientRect();
       canvas.width = rect.width;
       canvas.height = rect.height;
+      
       if (map && radarCircle) {
+        // Unlock map zoom temporarily to calculate the new proper fit
+        map.setMinZoom(0);
+        map.setMaxZoom(18);
         map.invalidateSize();
         map.fitBounds(radarCircle.getBounds(), { padding: [15, 15] });
-        const newZoom = map.getZoom() + 1;
+        
+        // Removed the "+ 1" here as well
+        const newZoom = map.getZoom();
         map.setView([userConfig.lat, userConfig.lon], newZoom);
+        
+        // Lock it back into place
         map.setMinZoom(newZoom);
         map.setMaxZoom(newZoom);
         map.setMaxBounds(radarCircle.getBounds());
