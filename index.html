@@ -89,30 +89,6 @@
       width: 10px; height: 10px;
     }
 
-    header {
-      padding: 0.35rem 1rem;
-      background: rgba(2, 10, 5, 0.95);
-      border-bottom: 1px solid var(--card-border);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      height: 40px;
-      z-index: 1000;
-      flex-shrink: 0;
-    }
-
-    h1 {
-      font-size: 0.9rem;
-      font-weight: 600;
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
-      color: #00ff66;
-      text-shadow: 0 0 8px rgba(0, 255, 102, 0.5);
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-
     .pulse-dot {
       width: 8px;
       height: 8px;
@@ -441,14 +417,6 @@
     <div class="start-sub">Tap or click anywhere to start the feed and enable audio alerts</div>
   </div>
 
-  <header>
-    <h1><span class="pulse-dot"></span> Retro ADSB Radar Scope (35 NM Wall Board)</h1>
-    <div style="display: flex; align-items: center; gap: 0.75rem;">
-      <div id="audio-toggle-btn" onclick="toggleAudio()" style="background: rgba(5, 20, 10, 0.9); border: 1px solid var(--accent-green); color: var(--accent-green); padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.65rem; font-weight: 600; cursor: pointer; box-shadow: 0 0 6px rgba(0,255,102,0.3); user-select: none;">🔊 Audio: ACTIVE</div>
-      <div id="connection-status" style="font-size: 0.7rem; color: var(--accent-green);">Initializing Feed...</div>
-    </div>
-  </header>
-
   <main>
     <div class="radar-wrapper" id="radarContainer">
       <div id="map"></div>
@@ -507,7 +475,7 @@
   </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"
-          onerror="document.getElementById('connection-status').innerText='LEAFLET FAILED TO LOAD - CHECK NETWORK'; document.getElementById('connection-status').style.color='#ff3333';"></script>
+          onerror="console.error('LEAFLET FAILED TO LOAD - CHECK NETWORK');"></script>
 
   <script>
     const userConfig = { lat: 52.9529, lon: -0.9547, radiusNM: 35 };
@@ -522,7 +490,8 @@
     let consecutive429s = 0;
     const aircraftTrails = {};
 
-    let audioAlertsEnabled = true;
+    // Home-use kiosk: audio alerts are always on, no mute toggle.
+    const audioAlertsEnabled = true;
     const pulsed35Hexes = new Set();
     const pulsed5Hexes = new Set();
     const announcedEmergencyHexes = new Set();
@@ -597,23 +566,6 @@
       setInterval(fetchLiveFlights, 12000);
     }
 
-    function toggleAudio() {
-      audioAlertsEnabled = !audioAlertsEnabled;
-      const btn = document.getElementById('audio-toggle-btn');
-      if (audioAlertsEnabled) {
-        btn.innerText = "🔊 Audio: ACTIVE";
-        btn.style.color = "var(--accent-green)";
-        btn.style.borderColor = "var(--accent-green)";
-        initKioskAudio();
-      } else {
-        btn.innerText = "🔇 Audio: MUTED";
-        btn.style.color = "var(--text-dim)";
-        btn.style.borderColor = "var(--card-border)";
-        if ('speechSynthesis' in window) {
-          window.speechSynthesis.cancel();
-        }
-      }
-    }
 
     const aircraftModelNames = {
       'C17': 'Boeing C-17 Globemaster',
@@ -1089,10 +1041,6 @@
       if (isFetching) return;
 
       if (Date.now() < pollBackoffUntil) {
-        const secsLeft = Math.ceil((pollBackoffUntil - Date.now()) / 1000);
-        const statusEl = document.getElementById('connection-status');
-        statusEl.innerText = `Rate limited - backing off (${secsLeft}s)`;
-        statusEl.style.color = '#ff3333';
         return;
       }
 
@@ -1117,7 +1065,11 @@
             const data = await response.json();
             const aircrafts = data.ac || data.aircraft;
             if (aircrafts) {
-              liveAircraft = aircrafts;
+              // Some feeds inject a synthetic "ground station" placeholder - hex all zeros,
+              // type "TWR" - representing the receiver's own site rather than an aircraft.
+              // Drop these before anything else, or they can end up "nearest" (distance ~0)
+              // and lock the scrollboard onto a fake target.
+              liveAircraft = aircrafts.filter(ac => !/^0+$/.test(ac.hex || '') && (ac.t || '').toUpperCase() !== 'TWR');
               
               liveAircraft.forEach(ac => {
                 if (!ac.hex || !ac.lat || !ac.lon) return;
@@ -1152,9 +1104,6 @@
         // 15s, 30s, 60s, 120s, ... capped at 5 minutes
         const backoffMs = Math.min(300000, 15000 * Math.pow(2, consecutive429s - 1));
         pollBackoffUntil = Date.now() + backoffMs;
-        const statusEl = document.getElementById('connection-status');
-        statusEl.innerText = `Rate limited - backing off (${Math.ceil(backoffMs / 1000)}s)`;
-        statusEl.style.color = '#ff3333';
       } else {
         updateUIState(false);
       }
@@ -1162,15 +1111,9 @@
     }
 
     function updateUIState(isConnected) {
-      const statusEl = document.getElementById('connection-status');
       if (isConnected) {
-        statusEl.innerText = `Live Connected (${liveAircraft.length} targets)`;
-        statusEl.style.color = '#00ff66';
         renderFlightBoard(liveAircraft);
         updateNearestScrollboard(liveAircraft);
-      } else {
-        statusEl.innerText = `Connecting... (Retrying)`;
-        statusEl.style.color = '#ffb000';
       }
     }
 
