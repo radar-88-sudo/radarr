@@ -452,6 +452,13 @@
     let scrollTimer = 120;
     let internalScrollPos = 0;
 
+    // Array of randomized bonus phrases to prepend or add to speech alerts
+    const randomAddonPhrases = [
+      "hold on to your fucking hats boys! it could be a fast one.",
+      "dont pull your willy too hard in excitement now!",
+      "heads up troops, things are getting spicy!"
+    ];
+
     function initKioskAudio() {
       try {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -643,7 +650,10 @@
           const speedKts = ac.gs !== undefined ? Math.round(ac.gs) : 0;
           const speedMph = Math.round(speedKts * 1.15078);
           
-          const speechText = `Proximity alert. Military aircraft callsign ${callsign} is heading in from the ${posCardinal} and moving ${trackCardinal} at ${altText} altitude, travelling at ${speedKts} knots, or ${speedMph} miles per hour, ${dist.toFixed(1)} miles away.`;
+          // Randomly select one of the phrases from the array to add on top
+          const randomPhrase = randomAddonPhrases[Math.floor(Math.random() * randomAddonPhrases.length)];
+
+          const speechText = `${randomPhrase} Proximity alert. Military aircraft callsign ${callsign} is heading in from the ${posCardinal} and moving ${trackCardinal} at ${altText} altitude, travelling at ${speedKts} knots, or ${speedMph} miles per hour, ${dist.toFixed(1)} miles away.`;
           
           if ('speechSynthesis' in window) {
             const utterance = new SpeechSynthesisUtterance(speechText);
