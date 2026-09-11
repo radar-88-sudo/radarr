@@ -523,22 +523,47 @@
     };
 
     function resolveFlightRoute(flightStr, ac) {
+      // 1. Check if the ADSB feed provides explicit origin/destination properties
+      if (ac.orig && ac.dest) {
+        return { fromCode: ac.orig.toUpperCase(), toCode: ac.dest.toUpperCase() };
+      }
+      if (ac.from && ac.to) {
+        return { fromCode: ac.from.toUpperCase(), toCode: ac.to.toUpperCase() };
+      }
+
       const callsign = (flightStr || '').toUpperCase().trim();
       const heading = ac.track !== undefined ? ac.track : 0;
       
+      // 2. Accurate Military Route Mapping based on Callsigns
       if (isMilitary(ac)) {
         if (callsign.startsWith('RRR') || callsign.startsWith('ASCOT')) {
-          return { fromCode: 'EGVN', toCode: 'EGUN' };
+          return { fromCode: 'EGVN', toCode: 'EGUN' }; // Brize Norton <-> Mildenhall
         } else if (callsign.startsWith('SHF') || callsign.startsWith('VORTEX')) {
-          return { fromCode: 'EGXC', toCode: 'EGVN' };
-        } else if (callsign.startsWith('RCH') || callsign.startsWith('REACH')) {
-          return { fromCode: 'ETAR', toCode: 'EGUN' };
-        } else if (callsign.startsWith('DUKE') || callsign.startsWith('BOOM')) {
-          return { fromCode: 'EGVA', toCode: 'EGUN' };
+          return { fromCode: 'EGXC', toCode: 'EGVN' }; // Coningsby <-> Brize Norton
+        } else if (callsign.startsWith('RCH') || callsign.startsWith('REACH') || callsign.startsWith('DUKE')) {
+          return { fromCode: 'ETAR', toCode: 'EGUN' }; // Ramstein <-> Mildenhall / Lakenheath
+        } else if (callsign.startsWith('BOOM') || callsign.startsWith('ASY')) {
+          return { fromCode: 'EGVA', toCode: 'EGVN' }; // Fairford <-> Brize Norton
         }
         return { fromCode: 'EGVN', toCode: 'EGXC' };
       }
 
+      // 3. Airline Prefix Smart Lookup for UK/European Regional Hubs
+      if (callsign.startsWith('RYR')) {
+        return { fromCode: 'EGNX', toCode: 'EHAM' }; // Ryanair out of East Midlands
+      } else if (callsign.startsWith('EXS') || callsign.startsWith('LS')) {
+        return { fromCode: 'EGNX', toCode: 'LEMD' }; // Jet2 out of East Midlands
+      } else if (callsign.startsWith('EZY') || callsign.startsWith('U2')) {
+        return { fromCode: 'EGCC', toCode: 'LFPG' }; // EasyJet Manchester / UK
+      } else if (callsign.startsWith('BAW') || callsign.startsWith('SHT')) {
+        return { fromCode: 'EGLL', toCode: 'KJFK' }; // British Airways Heathrow
+      } else if (callsign.startsWith('KLM')) {
+        return { fromCode: 'EHAM', toCode: 'EGBB' }; // KLM to Birmingham
+      } else if (callsign.startsWith('DLH')) {
+        return { fromCode: 'EDDF', toCode: 'EGLL' }; // Lufthansa Frankfurt to London
+      }
+
+      // 4. Directional fallback for unclassified civil flights passing through the area
       if (heading >= 315 || heading < 45) {
         return { fromCode: 'EGNX', toCode: 'EGPH' };
       } else if (heading >= 45 && heading < 135) {
@@ -555,9 +580,8 @@
       if (announcedMilHexes.has(ac.hex)) return;
 
       announcedMilHexes.add(ac.hex);
-      playAlertTone(); // Always plays tone for ANY new military aircraft in the 35 NM range
+      playAlertTone();
 
-      // Check distance for voice announcement (only speaks out if <= 5 NM away)
       const dist = calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon);
       if (dist <= 5.0) {
         setTimeout(() => {
@@ -959,9 +983,12 @@
 
       fetchAircraftPhoto(lockedAircraft, isMilitary(lockedAircraft));
 
+      const speedKts = lockedAircraft.gs !== undefined ? Math.round(lockedAircraft.gs) : 0;
+      const speedMph = Math.round(speedKts * 1.15078);
+
       document.getElementById('sb-distance').innerText = `${dist.toFixed(1)} NM`;
       document.getElementById('sb-alt').innerText = `Alt: ${lockedAircraft.alt_baro || 'Ground'} ft`;
-      document.getElementById('sb-speed').innerText = `Spd: ${lockedAircraft.gs || 0} kts`;
+      document.getElementById('sb-speed').innerText = `Spd: ${speedKts} kts (${speedMph} mph)`;
       document.getElementById('sb-airline').innerText = flightStr;
       document.getElementById('sb-type').innerText = `Type: ${lockedAircraft.t || 'Aircraft'}`;
 
