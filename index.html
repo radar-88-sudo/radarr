@@ -58,19 +58,19 @@
     }
 
     header {
-      padding: 0.35rem 1rem;
+      padding: 0.3rem 0.8rem;
       background: rgba(2, 10, 5, 0.95);
       border-bottom: 1px solid var(--card-border);
       display: flex;
       justify-content: space-between;
       align-items: center;
-      height: 40px;
+      height: 36px;
       z-index: 1000;
       flex-shrink: 0;
     }
 
     h1 {
-      font-size: 0.9rem;
+      font-size: 0.85rem;
       font-weight: 600;
       letter-spacing: 0.05em;
       text-transform: uppercase;
@@ -82,8 +82,8 @@
     }
 
     .pulse-dot {
-      width: 8px;
-      height: 8px;
+      width: 7px;
+      height: 7px;
       background-color: var(--accent-green);
       border-radius: 50%;
       box-shadow: 0 0 10px var(--accent-green);
@@ -98,10 +98,10 @@
 
     main {
       flex: 1;
-      padding: 0.3rem;
+      padding: 0.25rem;
       display: grid;
-      grid-template-columns: 1fr 340px;
-      gap: 0.3rem;
+      grid-template-columns: 1fr 270px; /* Slimmer sidebar maximizes radar display area */
+      gap: 0.25rem;
       width: 100%;
       min-height: 0;
     }
@@ -115,7 +115,7 @@
       height: 100%;
       width: 100%;
       touch-action: none;
-      box-shadow: inset 0 0 30px rgba(0, 255, 102, 0.15);
+      box-shadow: inset 0 0 40px rgba(0, 255, 102, 0.18);
     }
 
     #map {
@@ -128,7 +128,7 @@
       filter: brightness(1.15) contrast(1.05) saturate(1.1);
       opacity: 0.7;
       pointer-events: none;
-      clip-path: circle(44% at 50% 50%);
+      clip-path: circle(48% at 50% 50%);
       transition: clip-path 0.2s ease-out;
     }
 
@@ -154,7 +154,7 @@
       background: var(--card-bg);
       border: 1px solid var(--card-border);
       border-radius: 8px;
-      padding: 0.5rem;
+      padding: 0.4rem;
       display: flex;
       flex-direction: column;
       height: 100%;
@@ -163,11 +163,11 @@
     }
 
     .panel-title {
-      font-size: 0.7rem;
+      font-size: 0.65rem;
       font-weight: 600;
       text-transform: uppercase;
       color: var(--accent-military);
-      margin-bottom: 0.35rem;
+      margin-bottom: 0.3rem;
       letter-spacing: 0.05em;
       text-shadow: 0 0 6px rgba(255, 176, 0, 0.4);
     }
@@ -175,7 +175,7 @@
     .aircraft-grid {
       display: flex;
       flex-direction: column;
-      gap: 0.35rem;
+      gap: 0.3rem;
       flex: 1;
       overflow-y: auto;
       padding-right: 2px;
@@ -191,17 +191,17 @@
     .ac-card {
       background: rgba(10, 30, 18, 0.8);
       border: 1px solid var(--card-border);
-      padding: 0.35rem 0.45rem;
+      padding: 0.3rem 0.4rem;
       border-radius: 6px;
       display: flex;
       align-items: center;
-      gap: 0.5rem;
+      gap: 0.4rem;
       flex-shrink: 0;
     }
 
     .ac-thumb {
-      width: 90px;
-      height: 58px;
+      width: 75px;
+      height: 50px;
       background: rgba(2, 8, 4, 0.95);
       border: 1px solid var(--card-border);
       border-radius: 4px;
@@ -219,10 +219,10 @@
     }
 
     footer {
-      height: 110px;
+      height: 100px;
       background: rgba(2, 10, 5, 0.98);
       border-top: 1px solid var(--card-border);
-      padding: 0.3rem 0.4rem;
+      padding: 0.25rem 0.4rem;
       display: flex;
       align-items: center;
       z-index: 1000;
@@ -236,7 +236,7 @@
       border: 1px solid var(--card-border);
       border-radius: 8px;
       display: grid;
-      grid-template-columns: 105px 1.1fr 1.2fr 1fr 1fr;
+      grid-template-columns: 95px 1.1fr 1.2fr 1fr 1fr;
       align-items: center;
       overflow: hidden;
       box-shadow: 0 0 15px rgba(0, 0, 0, 0.8);
@@ -260,7 +260,7 @@
     }
 
     .logo-fallback {
-      font-size: 0.65rem;
+      font-size: 0.6rem;
       font-weight: bold;
       color: var(--accent-green);
       text-align: center;
@@ -270,7 +270,7 @@
     }
 
     .banner-col {
-      padding: 0.3rem 0.5rem;
+      padding: 0.25rem 0.4rem;
       display: flex;
       flex-direction: column;
       justify-content: center;
@@ -283,7 +283,7 @@
     }
 
     .airline-heading {
-      font-size: 1.05rem;
+      font-size: 0.98rem;
       font-weight: 800;
       color: var(--accent-green);
       letter-spacing: 0.02em;
@@ -293,17 +293,17 @@
     }
 
     .aircraft-meta {
-      font-size: 0.7rem;
+      font-size: 0.65rem;
       color: var(--text-dim);
       font-weight: 500;
-      margin-bottom: 0.1rem;
+      margin-bottom: 0.08rem;
     }
 
     .route-container {
       display: flex;
       flex-direction: column;
       gap: 0.02rem;
-      font-size: 0.72rem;
+      font-size: 0.68rem;
       font-weight: 600;
     }
 
@@ -318,9 +318,9 @@
 
     .route-label {
       color: var(--text-dim);
-      font-size: 0.62rem;
+      font-size: 0.58rem;
       text-transform: uppercase;
-      width: 26px;
+      width: 24px;
       flex-shrink: 0;
     }
 
@@ -332,7 +332,7 @@
     }
 
     .primary-metric {
-      font-size: 1.1rem;
+      font-size: 1.05rem;
       font-weight: 800;
       color: var(--accent-green);
       line-height: 1.1;
@@ -340,13 +340,13 @@
     }
 
     .secondary-metric {
-      font-size: 0.78rem;
+      font-size: 0.74rem;
       font-weight: 600;
       color: var(--text-main);
     }
 
     .sub-title {
-      font-size: 0.6rem;
+      font-size: 0.58rem;
       font-weight: 700;
       color: var(--text-dim);
       text-transform: uppercase;
@@ -362,8 +362,8 @@
   <header>
     <h1><span class="pulse-dot"></span> Retro ADSB Radar Scope (35 NM Wall Board)</h1>
     <div style="display: flex; align-items: center; gap: 0.75rem;">
-      <div id="audio-indicator" style="background: rgba(5, 20, 10, 0.9); border: 1px solid var(--accent-green); color: var(--accent-green); padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.65rem; font-weight: 600; box-shadow: 0 0 6px rgba(0,255,102,0.3);">🔊 Audio: ACTIVE</div>
-      <div id="connection-status" style="font-size: 0.7rem; color: var(--accent-green);">Initializing Feed...</div>
+      <div id="audio-indicator" style="background: rgba(5, 20, 10, 0.9); border: 1px solid var(--accent-green); color: var(--accent-green); padding: 0.12rem 0.35rem; border-radius: 4px; font-size: 0.6rem; font-weight: 600; box-shadow: 0 0 6px rgba(0,255,102,0.3);">🔊 Audio: ACTIVE</div>
+      <div id="connection-status" style="font-size: 0.65rem; color: var(--accent-green);">Initializing Feed...</div>
     </div>
   </header>
 
@@ -377,9 +377,9 @@
       <div class="panel">
         <div class="panel-title">Active Military Transponders</div>
         <div id="aircraft-grid" class="aircraft-grid">
-          <div style="color:var(--text-dim); font-size:0.75rem; padding: 0.5rem; text-align:center;">Scanning sector...</div>
+          <div style="color:var(--text-dim); font-size:0.7rem; padding: 0.5rem; text-align:center;">Scanning sector...</div>
         </div>
-        <div id="status-bar" style="font-size:0.58rem; color:var(--text-dim); margin-top:0.3rem;">
+        <div id="status-bar" style="font-size:0.55rem; color:var(--text-dim); margin-top:0.25rem;">
           Station: 52.9529° N, 0.9547° W
         </div>
       </div>
@@ -418,14 +418,14 @@
         <div class="sub-title">Vector & V/S</div>
         <div id="sb-rate" class="secondary-metric" style="font-weight: 700;">Rate: --</div>
         <div id="sb-heading" class="secondary-metric">Hdng: --°</div>
-        <div id="sb-bearing" class="secondary-metric" style="font-size:0.72rem; color:var(--text-dim);">Bearing: --°</div>
+        <div id="sb-bearing" class="secondary-metric" style="font-size:0.68rem; color:var(--text-dim);">Bearing: --°</div>
       </div>
 
       <div class="banner-col metric-group">
         <div class="sub-title">Transponder ID</div>
         <div id="sb-squawk" class="secondary-metric" style="font-weight:700;">Squawk: ----</div>
-        <div id="sb-hex" class="secondary-metric" style="font-size:0.72rem; color:var(--text-dim);">Hex: --</div>
-        <div id="sb-reg" class="secondary-metric" style="font-size:0.72rem; color:var(--accent-military);">Reg: --</div>
+        <div id="sb-hex" class="secondary-metric" style="font-size:0.68rem; color:var(--text-dim);">Hex: --</div>
+        <div id="sb-reg" class="secondary-metric" style="font-size:0.68rem; color:var(--accent-military);">Reg: --</div>
       </div>
     </div>
   </footer>
@@ -486,12 +486,6 @@
       'RC135': 'Boeing RC-135 Rivet Joint'
     };
 
-    function getAircraftModelName(typeCode) {
-      if (!typeCode) return 'Military Aircraft';
-      const clean = typeCode.toUpperCase().trim();
-      return aircraftModelNames[clean] || `Military Aircraft (${clean})`;
-    }
-
     function playAlertTone() {
       try {
         if (!audioCtx) initKioskAudio();
@@ -521,7 +515,7 @@
       const overlay = document.getElementById('screen-pulse-overlay');
       if (!overlay) return;
       overlay.classList.remove('screen-pulse-active');
-      void overlay.offsetWidth; // Force DOM reflow to restart animation loop
+      void overlay.offsetWidth;
       overlay.classList.add('screen-pulse-active');
     }
 
@@ -565,7 +559,6 @@
       if (!callsign || callsign.startsWith('ICAO:') || callsign.startsWith('AWAITING')) return null;
       const cleanCallsign = callsign.trim().toUpperCase();
       
-      // Return cached result if already fetched to prevent spamming the API
       if (routeCache[cleanCallsign]) return routeCache[cleanCallsign];
 
       try {
@@ -574,13 +567,10 @@
           const data = await response.json();
           if (data && data.response && data.response.flightroute) {
             const fr = data.response.flightroute;
-            
-            // Extract IATA code first, fallback to ICAO code
             const fromCode = (fr.origin?.iata || fr.origin?.icao || '').toUpperCase();
             const toCode = (fr.destination?.iata || fr.destination?.icao || '').toUpperCase();
 
             if (fromCode && toCode) {
-              // Dynamically add airport names to your database if returned
               if (fr.origin?.name) airportDatabase[fromCode] = fr.origin.name;
               if (fr.destination?.name) airportDatabase[toCode] = fr.destination.name;
 
@@ -590,9 +580,7 @@
             }
           }
         }
-      } catch (err) {
-        // Fail silently so the fallback route remains visible if offline/rate-limited
-      }
+      } catch (err) {}
       return null;
     }
 
@@ -651,10 +639,9 @@
       const dist = calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon);
       let triggeredPulse = false;
 
-      // Condition 2: Within 5 NM radius (Triggers red pulse again + speech announcement)
       if (dist <= 5.0 && !pulsed5Hexes.has(ac.hex)) {
         pulsed5Hexes.add(ac.hex);
-        pulsed35Hexes.add(ac.hex); // Mark 35nm as handled so it doesn't double pulse simultaneously
+        pulsed35Hexes.add(ac.hex);
         triggeredPulse = true;
         triggerRedPulse();
 
@@ -679,7 +666,6 @@
         }, 350);
       }
 
-      // Condition 1: New military aircraft in 35 NM radius
       if (!triggeredPulse && !pulsed35Hexes.has(ac.hex)) {
         pulsed35Hexes.add(ac.hex);
         triggerRedPulse();
@@ -776,7 +762,7 @@
       if (photoUrl) {
         thumbEl.innerHTML = `<img src="${photoUrl}" alt="Military Aircraft Photo">`;
       } else {
-        thumbEl.innerHTML = `<span style="font-size:0.55rem; color:var(--accent-military); font-weight:bold; text-align:center;">MIL</span>`;
+        thumbEl.innerHTML = `<span style="font-size:0.5rem; color:var(--accent-military); font-weight:bold; text-align:center;">MIL</span>`;
       }
     }
 
@@ -815,7 +801,7 @@
         radius: radiusMeters
       }).addTo(map);
 
-      map.fitBounds(radarCircle.getBounds(), { padding: [20, 20] });
+      map.fitBounds(radarCircle.getBounds(), { padding: [5, 5] });
       
       const lockedZoom = map.getZoom();
       map.setMinZoom(lockedZoom);
@@ -836,10 +822,10 @@
         if (radiusPx && radiusPx > 50) {
           mapEl.style.clipPath = `circle(${radiusPx}px at ${centerPt.x}px ${centerPt.y}px)`;
         } else {
-          mapEl.style.clipPath = `circle(44% at 50% 50%)`;
+          mapEl.style.clipPath = `circle(48% at 50% 50%)`;
         }
       } catch (e) {
-        mapEl.style.clipPath = `circle(44% at 50% 50%)`;
+        mapEl.style.clipPath = `circle(48% at 50% 50%)`;
       }
     }
 
@@ -854,7 +840,7 @@
         map.setMinZoom(0);
         map.setMaxZoom(18);
         map.invalidateSize();
-        map.fitBounds(radarCircle.getBounds(), { padding: [20, 20] });
+        map.fitBounds(radarCircle.getBounds(), { padding: [5, 5] });
         
         const newZoom = map.getZoom();
         map.setMinZoom(newZoom);
@@ -970,7 +956,7 @@
       const militaryList = acList.filter(ac => isMilitary(ac));
 
       if (!militaryList || militaryList.length === 0) {
-        gridEl.innerHTML = '<div style="color:var(--text-dim); font-size:0.75rem; padding: 0.5rem; text-align:center;">No active military transponders within 35 NM.</div>';
+        gridEl.innerHTML = '<div style="color:var(--text-dim); font-size:0.7rem; padding: 0.5rem; text-align:center;">No active military transponders within 35 NM.</div>';
         internalScrollPos = 0;
         return;
       }
@@ -986,15 +972,15 @@
         card.className = 'ac-card';
         card.innerHTML = `
           <div class="ac-thumb" id="${cardId}-thumb">
-            <span style="font-size:0.55rem; color:var(--accent-military); font-weight:bold; text-align:center;">MIL</span>
+            <span style="font-size:0.5rem; color:var(--accent-military); font-weight:bold; text-align:center;">MIL</span>
           </div>
           <div style="flex: 1; min-width: 0;">
-            <div style="font-weight:bold; font-size:0.78rem; color:var(--accent-military); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 0 5px rgba(255,176,0,0.4);">${ac.flight ? ac.flight.trim() : ac.hex}</div>
-            <div style="font-size:0.65rem; color:var(--text-dim);">[${ac.t || 'MIL'}] • ${ac.gs || 0} kts</div>
+            <div style="font-weight:bold; font-size:0.75rem; color:var(--accent-military); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 0 5px rgba(255,176,0,0.4);">${ac.flight ? ac.flight.trim() : ac.hex}</div>
+            <div style="font-size:0.6rem; color:var(--text-dim);">[${ac.t || 'MIL'}] • ${ac.gs || 0} kts</div>
           </div>
           <div style="text-align:right; flex-shrink: 0;">
-            <div style="font-weight:bold; color:var(--accent-green); font-size:0.78rem; text-shadow: 0 0 5px rgba(0,255,102,0.4);">${dist.toFixed(1)} NM</div>
-            <div style="font-size:0.65rem; color:var(--text-dim);">${ac.alt_baro || 'Ground'} ft</div>
+            <div style="font-weight:bold; color:var(--accent-green); font-size:0.75rem; text-shadow: 0 0 5px rgba(0,255,102,0.4);">${dist.toFixed(1)} NM</div>
+            <div style="font-size:0.6rem; color:var(--text-dim);">${ac.alt_baro || 'Ground'} ft</div>
           </div>
         `;
         gridEl.appendChild(card);
@@ -1095,15 +1081,12 @@
         rateEl.innerHTML = `<span style="color: var(--text-dim);">— Level Flight</span>`;
       }
 
-      // 1. Instantly display fallback/estimated route so the UI doesn't lag
       const route = resolveFlightRoute(flightStr, lockedAircraft);
       document.getElementById('sb-from').innerHTML = `<b>${route.fromCode}</b> — <span style="color:var(--text-dim);">${airportDatabase[route.fromCode] || 'Aerodrome'}</span>`;
       document.getElementById('sb-to').innerHTML = `<b>${route.toCode}</b> — <span style="color:var(--text-dim);">${airportDatabase[route.toCode] || 'Aerodrome'}</span>`;
 
-      // 2. Asynchronously fetch real live route from ADSBDB API
       fetchLiveFlightRoute(lockedAircraft.flight).then(liveRoute => {
         if (liveRoute && liveRoute.fromCode && liveRoute.toCode) {
-          // Ensure we only update if this aircraft is still the active locked one
           document.getElementById('sb-from').innerHTML = `<b>${liveRoute.fromCode}</b> — <span style="color:var(--text-dim);">${airportDatabase[liveRoute.fromCode] || 'Aerodrome'}</span>`;
           document.getElementById('sb-to').innerHTML = `<b>${liveRoute.toCode}</b> — <span style="color:var(--text-dim);">${airportDatabase[liveRoute.toCode] || 'Aerodrome'}</span>`;
         }
