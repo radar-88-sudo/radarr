@@ -635,6 +635,63 @@
       } catch (e) {}
     }
 
+    // Wailing two-tone siren (European emergency-vehicle style: sweeps between a low and
+    // high pitch a few times) - distinct from the short single-beep playAlertTone(), reserved
+    // for an actual emergency-squawk lock so it doesn't get confused with a routine proximity
+    // ping. Returns its total duration in ms so callers can time a follow-up speech announcement.
+    function playEmergencySiren() {
+      if (!audioAlertsEnabled) return 0;
+      try {
+        if (!audioCtx) initKioskAudio();
+        if (audioCtx && audioCtx.state === 'suspended') {
+          audioCtx.resume();
+        }
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        const now = audioCtx.currentTime;
+        const lowFreq = 600;
+        const highFreq = 1300;
+        const sweepSeconds = 0.4;
+        const cycles = 4;
+        const totalSeconds = cycles * sweepSeconds * 2;
+
+        gain.gain.setValueAtTime(0.16, now);
+        osc.frequency.setValueAtTime(lowFreq, now);
+        for (let i = 0; i < cycles; i++) {
+          const upEnd = now + (i * 2 + 1) * sweepSeconds;
+          const downEnd = now + (i * 2 + 2) * sweepSeconds;
+          osc.frequency.linearRampToValueAtTime(highFreq, upEnd);
+          osc.frequency.linearRampToValueAtTime(lowFreq, downEnd);
+        }
+        gain.gain.setValueAtTime(0.16, now + totalSeconds - 0.15);
+        gain.gain.linearRampToValueAtTime(0, now + totalSeconds);
+
+        osc.start(now);
+        osc.stop(now + totalSeconds + 0.05);
+        return totalSeconds * 1000;
+      } catch (e) {
+        return 0;
+      }
+    }
+
+    // Spoken emergency callout - separate from announceMilitaryAircraft() (that one is for
+    // routine military-proximity pings, not squawk emergencies).
+    function announceEmergencySquawk(ac) {
+      if (!audioAlertsEnabled) return;
+      if (!('speechSynthesis' in window)) return;
+      const callsign = ac.flight ? ac.flight.trim() : ac.hex;
+      const squawk = ac.squawk || 'an emergency code';
+      const speechText = `Emergency, emergency. A plane has put out ${squawk} with the callsign ${callsign}.`;
+      const utterance = new SpeechSynthesisUtterance(speechText);
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+      window.speechSynthesis.speak(utterance);
+    }
+
     function triggerRedPulse() {
       const overlay = document.getElementById('screen-pulse-overlay');
       if (!overlay) return;
@@ -1341,8 +1398,11 @@
       // as long as the emergency lasts.
       if (isEmergencyLock && !announcedEmergencyHexes.has(lockedAircraft.hex)) {
         announcedEmergencyHexes.add(lockedAircraft.hex);
-        playAlertTone();
+        const emergencyAc = lockedAircraft;
+        const sirenMs = playEmergencySiren();
         triggerRedPulse();
+        // Let the siren play out before the spoken callout so they don't talk over each other.
+        setTimeout(() => announceEmergencySquawk(emergencyAc), Math.max(300, sirenMs));
       }
 
       fetchAircraftPhoto(lockedAircraft, isMilitary(lockedAircraft));
@@ -1355,7 +1415,8 @@
       document.getElementById('sb-speed').innerText = `Spd: ${speedKts} kts (${speedMph} mph)`;
 
       const airlineEl = document.getElementById('sb-airline');
-      airlineEl.innerText = isEmergencyLock ? `⚠ EMERGENCY — ${flightStr}` : flightStr;
+      const planeLabel = lockedAircraft.flight ? lockedAircraft.flight.trim() : lockedAircraft.hex;
+      airlineEl.innerText = isEmergencyLock ? `⚠ EMERGENCY-${planeLabel}-${lockedAircraft.squawk}` : flightStr;
       airlineEl.style.color = isEmergencyLock ? 'var(--accent-red)' : 'var(--accent-green)';
       airlineEl.style.textShadow = isEmergencyLock
         ? '0 0 10px rgba(255,51,51,0.6)'
