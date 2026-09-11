@@ -426,7 +426,8 @@
     const announcedMilHexes = new Set();
     let audioCtx = null;
 
-    let scrollPauseCounter = 0;
+    let scrollState = 'SCROLLING'; // 'SCROLLING', 'PAUSED_BOTTOM'
+    let scrollTimer = 0;
 
     function initKioskAudio() {
       try {
@@ -877,16 +878,22 @@
         return;
       }
 
-      if (scrollPauseCounter > 0) {
-        scrollPauseCounter--;
+      if (scrollState === 'PAUSED_BOTTOM') {
+        scrollTimer--;
+        if (scrollTimer <= 0) {
+          grid.scrollTop = 0; // Reset to top after pause
+          scrollState = 'SCROLLING';
+        }
         return;
       }
 
-      grid.scrollTop += 0.5;
+      // Slower crawl speed (0.2 pixels per frame)
+      grid.scrollTop += 0.2;
 
+      // Check if reached the bottom
       if (grid.scrollTop + grid.clientHeight >= grid.scrollHeight - 1) {
-        scrollPauseCounter = 120; // Pause for ~2 seconds at bottom
-        grid.scrollTop = 0; // Return to top
+        scrollState = 'PAUSED_BOTTOM';
+        scrollTimer = 120; // Exact 2 second pause at the bottom (120 frames at 60 FPS)
       }
     }
 
