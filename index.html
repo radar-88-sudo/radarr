@@ -100,7 +100,7 @@
       flex: 1;
       padding: 0.25rem;
       display: grid;
-      grid-template-columns: 1fr 240px; /* Optimised sidebar width to maximise radar canvas size */
+      grid-template-columns: 1fr 240px;
       gap: 0.25rem;
       width: 100%;
       min-height: 0;
@@ -462,30 +462,6 @@
       } catch (e) {}
     }
 
-    const aircraftModelNames = {
-      'C17': 'Boeing C-17 Globemaster',
-      'C130': 'Lockheed C-130 Hercules',
-      'F16': 'Lockheed Martin F-16 Fighting Falcon',
-      'F15': 'McDonnell Douglas F-15 Eagle',
-      'F18': 'Boeing F/A-18 Hornet',
-      'F35': 'Lockheed Martin F-35 Lightning II',
-      'EF20': 'Eurofighter Typhoon',
-      'EUFI': 'Eurofighter Typhoon',
-      'TYPH': 'Eurofighter Typhoon',
-      'A400': 'Airbus A400M Atlas',
-      'K35R': 'Boeing KC-135 Stratotanker',
-      'KC135': 'Boeing KC-135 Stratotanker',
-      'P8': 'Boeing P-8 Poseidon',
-      'E3TF': 'Boeing E-3 Sentry AWACS',
-      'CH47': 'Boeing CH-47 Chinook',
-      'AH64': 'Boeing AH-64 Apache',
-      'UH60': 'Sikorsky UH-60 Black Hawk',
-      'V22': 'Bell Boeing V-22 Osprey',
-      'HAWK': 'BAE Systems Hawk',
-      'TOR': 'Panavia Tornado',
-      'RC135': 'Boeing RC-135 Rivet Joint'
-    };
-
     function playAlertTone() {
       try {
         if (!audioCtx) initKioskAudio();
@@ -536,12 +512,19 @@
       'EGPH': 'Edinburgh Airport, UK',
       'EGPF': 'Glasgow Airport, UK',
       'EGNT': 'Newcastle Airport, UK',
+      'EGPD': 'Aberdeen Airport, UK',
+      'EGPK': 'Prestwick Airport, UK',
+      'EGGD': 'Bristol Airport, UK',
+      'EGKK': 'London Gatwick, UK',
       'EGVN': 'RAF Brize Norton, UK',
       'EGUN': 'RAF Mildenhall, UK',
       'EGVA': 'RAF Fairford, UK',
       'EGXC': 'RAF Coningsby, UK',
       'EGUL': 'RAF Lakenheath, UK',
+      'EGYM': 'RAF Marham, UK',
+      'EGOW': 'RAF Woodvale, UK',
       'ETAR': 'Ramstein Air Base, Germany',
+      'ETNG': 'Geilenkirchen NATO AB, Germany',
       'EHAM': 'Amsterdam Schiphol, Netherlands',
       'LFPG': 'Paris Charles de Gaulle, France',
       'EDDF': 'Frankfurt Airport, Germany',
@@ -584,6 +567,10 @@
       return null;
     }
 
+    /**
+     * ADVANCED MULTI-FACTOR ROUTE ESTIMATION ENGINE
+     * Analyses operator prefix, aircraft type, altitude (height), ground speed, and heading/track.
+     */
     function resolveFlightRoute(flightStr, ac) {
       if (ac.orig && ac.dest) {
         return { fromCode: ac.orig.toUpperCase(), toCode: ac.dest.toUpperCase() };
@@ -593,43 +580,63 @@
       }
 
       const callsign = (flightStr || '').toUpperCase().trim();
+      const type = (ac.t || '').toUpperCase();
+      const alt = ac.alt_baro !== undefined ? ac.alt_baro : 10000;
+      const speed = ac.gs !== undefined ? ac.gs : 250;
       const heading = ac.track !== undefined ? ac.track : 0;
-      
-      if (isMilitary(ac)) {
+      const isMil = isMilitary(ac);
+
+      // 1. Military Heuristics based on operator callsigns & types
+      if (isMil) {
         if (callsign.startsWith('RRR') || callsign.startsWith('ASCOT')) {
-          return { fromCode: 'EGVN', toCode: 'EGUN' };
+          return { fromCode: 'EGVN', toCode: heading > 180 ? 'ETAR' : 'EGUN' }; // RAF Brize Norton tanker/transport corridors
         } else if (callsign.startsWith('SHF') || callsign.startsWith('VORTEX')) {
-          return { fromCode: 'EGXC', toCode: 'EGVN' };
+          return { fromCode: 'EGXC', toCode: 'EGVN' }; // Fighter / Quick Reaction Alert training vectors
         } else if (callsign.startsWith('RCH') || callsign.startsWith('REACH') || callsign.startsWith('DUKE')) {
-          return { fromCode: 'ETAR', toCode: 'EGUN' };
+          return { fromCode: 'ETAR', toCode: 'EGUN' }; // US Air Mobility Command transatlantic logistics
         } else if (callsign.startsWith('BOOM') || callsign.startsWith('ASY')) {
           return { fromCode: 'EGVA', toCode: 'EGVN' };
+        } else if (type.includes('CH47') || type.includes('AH64') || type.includes('UH60')) {
+          return { fromCode: 'EGOW', toCode: 'EGVN' }; // Helicopters
         }
         return { fromCode: 'EGVN', toCode: 'EGXC' };
       }
 
-      if (callsign.startsWith('RYR')) {
-        return { fromCode: 'EGNX', toCode: 'EHAM' };
+      // 2. Low altitude / low speed local traffic / circuits near East Midlands / regional UK
+      if (alt < 4000 && speed < 200) {
+        if (heading >= 180 && heading < 360) {
+          return { fromCode: 'EGNX', toCode: 'EGBB' };
+        } else {
+          return { fromCode: 'EGCC', toCode: 'EGNX' };
+        }
+      }
+
+      // 3. Commercial Airline Callsign Prefix Heuristics
+      if (callsign.startsWith('RYR') || callsign.startsWith('RFR')) {
+        return { fromCode: 'EGNX', toCode: heading > 90 && heading < 270 ? 'LEMD' : 'EHAM' };
       } else if (callsign.startsWith('EXS') || callsign.startsWith('LS')) {
-        return { fromCode: 'EGNX', toCode: 'LEMD' };
+        return { fromCode: 'EGNX', toCode: 'EGPH' };
       } else if (callsign.startsWith('EZY') || callsign.startsWith('U2')) {
         return { fromCode: 'EGCC', toCode: 'LFPG' };
       } else if (callsign.startsWith('BAW') || callsign.startsWith('SHT')) {
         return { fromCode: 'EGLL', toCode: 'KJFK' };
       } else if (callsign.startsWith('KLM')) {
         return { fromCode: 'EHAM', toCode: 'EGBB' };
-      } else if (callsign.startsWith('DLH')) {
+      } else if (callsign.startsWith('DLH') || callsign.startsWith('BOX')) {
         return { fromCode: 'EDDF', toCode: 'EGLL' };
+      } else if (callsign.startsWith('UAE') || callsign.startsWith('ETD')) {
+        return { fromCode: 'OMDB', toCode: 'EGLL' };
       }
 
+      // 4. Heading & Track Vector Corridor Mapping for un-prefixed traffic
       if (heading >= 315 || heading < 45) {
-        return { fromCode: 'EGNX', toCode: 'EGPH' };
+        return { fromCode: 'EGCC', toCode: 'EGPH' }; // Northbound corridor
       } else if (heading >= 45 && heading < 135) {
-        return { fromCode: 'EGCC', toCode: 'EHAM' };
+        return { fromCode: 'EGNX', toCode: 'EHAM' }; // Eastbound / European corridor
       } else if (heading >= 135 && heading < 225) {
-        return { fromCode: 'EGPH', toCode: 'EGLL' };
+        return { fromCode: 'EGPH', toCode: 'EGLL' }; // Southbound corridor
       } else {
-        return { fromCode: 'EHAM', toCode: 'EIDW' };
+        return { fromCode: 'EHAM', toCode: 'EIDW' }; // Westbound / Atlantic corridor
       }
     }
 
