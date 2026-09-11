@@ -464,20 +464,6 @@
       return aircraftModelNames[clean] || `Military Aircraft (${clean})`;
     }
 
-    function getCountryFromHex(hexStr) {
-      if (!hexStr) return "Unknown Country";
-      const num = parseInt(hexStr, 16);
-      if (isNaN(num)) return "Unknown Country";
-
-      if (num >= 0xA00000 && num <= 0xAFFFFF) return "United States";
-      if (num >= 0x400000 && num <= 0x43FFFF) return "United Kingdom";
-      if (num >= 0x380000 && num <= 0x3BFFFF) return "France";
-      if (num >= 0x3C0000 && num <= 0x3FFFFF) return "Germany";
-      if (num >= 0x300000 && num <= 0x33FFFF) return "Italy";
-      if (num >= 0x340000 && num <= 0x37FFFF) return "Spain";
-      return "Allied Airspace";
-    }
-
     function playAlertTone() {
       try {
         if (!audioCtx) initKioskAudio();
@@ -500,6 +486,12 @@
         osc.start();
         osc.stop(audioCtx.currentTime + 0.3);
       } catch (e) {}
+    }
+
+    function getCardinalFromDeg(deg) {
+      const val = Math.floor((deg + 22.5) / 45);
+      const arr = ["North", "Northeast", "East", "Southeast", "South", "Southwest", "West", "Northwest"];
+      return arr[(val % 8)];
     }
 
     const airportDatabase = {
@@ -563,22 +555,19 @@
       if (announcedMilHexes.has(ac.hex)) return;
 
       announcedMilHexes.add(ac.hex);
-      playAlertTone(); // Beeps immediately for ANY new military aircraft in the 35 NM range
+      playAlertTone(); // Always plays tone for ANY new military aircraft in the 35 NM range
 
-      // Check distance for voice announcement (only speaks if <= 5 NM away)
+      // Check distance for voice announcement (only speaks out if <= 5 NM away)
       const dist = calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon);
       if (dist <= 5.0) {
         setTimeout(() => {
-          const modelName = getAircraftModelName(ac.t);
-          const country = getCountryFromHex(ac.hex);
           const callsign = ac.flight ? ac.flight.trim() : 'Unknown callsign';
+          const bearing = calcBearing(userConfig.lat, userConfig.lon, ac.lat, ac.lon);
+          const posCardinal = getCardinalFromDeg(bearing);
+          const trackCardinal = getCardinalFromDeg(ac.track !== undefined ? ac.track : 0);
+          const altText = ac.alt_baro ? `${Math.round(ac.alt_baro)} feet` : 'ground level';
           
-          // Resolve route headings/airports
-          const route = resolveFlightRoute(ac.flight, ac);
-          const fromLoc = airportDatabase[route.fromCode] || route.fromCode;
-          const toLoc = airportDatabase[route.toCode] || route.toCode;
-          
-          const speechText = `Proximity alert. Military aircraft Callsign ${callsign} is ${dist.toFixed(1)} miles away. Model: ${modelName}, from ${country}, heading from ${fromLoc} to ${toLoc}.`;
+          const speechText = `Proximity alert. Military aircraft callsign ${callsign} is heading in from the ${posCardinal} and moving ${trackCardinal} at ${altText} altitude, ${dist.toFixed(1)} miles away.`;
           
           if ('speechSynthesis' in window) {
             const utterance = new SpeechSynthesisUtterance(speechText);
