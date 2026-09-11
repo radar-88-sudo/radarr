@@ -3,21 +3,21 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FREDS FLIGHT WALL WITH MIL TRACKING AND ALERTS V1(Wall Board)</title>
+  <title>Live ADSB Airspace Scope (Retro Radar Wall Board)</title>
   
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
   <style>
     :root {
-      --bg-color: #0b0f19;
-      --card-bg: rgba(22, 31, 49, 0.95);
-      --card-border: #1e2d4a;
-      --text-main: #f8fafc;
-      --text-dim: #94a3b8;
-      --accent-green: #10b981;
-      --accent-blue: #3b82f6;
-      --accent-military: #ff007f;
-      --accent-red: #ef4444;
+      --bg-color: #030704;
+      --card-bg: rgba(5, 15, 9, 0.95);
+      --card-border: #0f381f;
+      --text-main: #00ff66;
+      --text-dim: #2b7a4b;
+      --accent-green: #00ff66;
+      --accent-blue: #00bfff;
+      --accent-military: #ffb000;
+      --accent-red: #ff3333;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -36,7 +36,7 @@
 
     header {
       padding: 0.4rem 1rem;
-      background: rgba(15, 23, 42, 0.95);
+      background: rgba(2, 10, 5, 0.95);
       border-bottom: 1px solid var(--card-border);
       display: flex;
       justify-content: space-between;
@@ -51,7 +51,8 @@
       font-weight: 600;
       letter-spacing: 0.05em;
       text-transform: uppercase;
-      color: #f8fafc;
+      color: #00ff66;
+      text-shadow: 0 0 8px rgba(0, 255, 102, 0.5);
       display: flex;
       align-items: center;
       gap: 0.5rem;
@@ -62,13 +63,13 @@
       height: 8px;
       background-color: var(--accent-green);
       border-radius: 50%;
-      box-shadow: 0 0 8px var(--accent-green);
+      box-shadow: 0 0 10px var(--accent-green);
       animation: pulse 2s infinite;
     }
 
     @keyframes pulse {
       0% { transform: scale(0.95); opacity: 0.8; }
-      50% { transform: scale(1.1); opacity: 1; box-shadow: 0 0 12px var(--accent-green); }
+      50% { transform: scale(1.1); opacity: 1; box-shadow: 0 0 15px var(--accent-green); }
       100% { transform: scale(0.95); opacity: 0.8; }
     }
 
@@ -79,18 +80,19 @@
       grid-template-columns: 1fr 360px;
       gap: 0.5rem;
       width: 100%;
-      min-height: 0; /* Ensures proper scaling within flexbox */
+      min-height: 0;
     }
 
     .radar-wrapper {
       position: relative;
-      background: #060911;
+      background: #010502;
       border: 1px solid var(--card-border);
       border-radius: 8px;
       overflow: hidden;
       height: 100%;
       width: 100%;
       touch-action: none;
+      box-shadow: inset 0 0 30px rgba(0, 255, 102, 0.15);
     }
 
     #map {
@@ -100,7 +102,8 @@
       width: 100%;
       height: 100%;
       z-index: 1;
-      filter: brightness(0.6) contrast(1.2) hue-rotate(180deg);
+      filter: brightness(0.9) contrast(1.4) saturate(0.5) hue-rotate(160deg);
+      opacity: 0.45;
       pointer-events: none;
     }
 
@@ -131,15 +134,17 @@
       flex-direction: column;
       height: 100%;
       min-height: 0;
+      box-shadow: 0 0 15px rgba(0, 0, 0, 0.8);
     }
 
     .panel-title {
       font-size: 0.7rem;
       font-weight: 600;
       text-transform: uppercase;
-      color: var(--text-dim);
+      color: var(--accent-military);
       margin-bottom: 0.35rem;
       letter-spacing: 0.05em;
+      text-shadow: 0 0 6px rgba(255, 176, 0, 0.4);
     }
 
     .aircraft-grid {
@@ -153,8 +158,8 @@
     }
 
     .ac-card {
-      background: rgba(30, 41, 59, 0.7);
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(10, 30, 18, 0.8);
+      border: 1px solid var(--card-border);
       padding: 0.4rem 0.5rem;
       border-radius: 6px;
       display: flex;
@@ -165,7 +170,7 @@
     .ac-thumb {
       width: 100px;
       height: 64px;
-      background: rgba(10, 15, 30, 0.9);
+      background: rgba(2, 8, 4, 0.95);
       border: 1px solid var(--card-border);
       border-radius: 4px;
       overflow: hidden;
@@ -183,7 +188,7 @@
 
     footer {
       height: 112px;
-      background: rgba(15, 23, 42, 0.98);
+      background: rgba(2, 10, 5, 0.98);
       border-top: 1px solid var(--card-border);
       padding: 0.4rem 0.5rem;
       display: flex;
@@ -202,12 +207,13 @@
       grid-template-columns: 120px 1.3fr 1.1fr 1fr;
       align-items: center;
       overflow: hidden;
+      box-shadow: 0 0 15px rgba(0, 0, 0, 0.8);
     }
 
     .logo-container {
       width: 100%;
       height: 100%;
-      background: rgba(10, 15, 30, 0.95);
+      background: rgba(2, 8, 4, 0.95);
       border-right: 1px solid var(--card-border);
       display: flex;
       align-items: center;
@@ -224,10 +230,11 @@
     .logo-fallback {
       font-size: 0.7rem;
       font-weight: bold;
-      color: var(--accent-blue);
+      color: var(--accent-green);
       text-align: center;
       text-transform: uppercase;
       padding: 4px;
+      text-shadow: 0 0 6px rgba(0, 255, 102, 0.5);
     }
 
     .banner-col {
@@ -236,7 +243,7 @@
       flex-direction: column;
       justify-content: center;
       height: 100%;
-      border-right: 1px solid rgba(255, 255, 255, 0.06);
+      border-right: 1px solid rgba(15, 56, 31, 0.6);
     }
 
     .banner-col:last-child {
@@ -246,10 +253,11 @@
     .airline-heading {
       font-size: 1.15rem;
       font-weight: 800;
-      color: var(--accent-blue);
+      color: var(--accent-green);
       letter-spacing: 0.02em;
       line-height: 1.1;
       margin-bottom: 0.1rem;
+      text-shadow: 0 0 8px rgba(0, 255, 102, 0.4);
     }
 
     .aircraft-meta {
@@ -296,6 +304,7 @@
       font-weight: 800;
       color: var(--accent-green);
       line-height: 1.1;
+      text-shadow: 0 0 8px rgba(0, 255, 102, 0.5);
     }
 
     .secondary-metric {
@@ -316,10 +325,10 @@
 <body>
 
   <header>
-    <h1><span class="pulse-dot"></span> FRED FLIGHT WALL WITH MIL TRACKING AND ALERTS V.1 (50 NM Wall Board From Bingham)</h1>
+    <h1><span class="pulse-dot"></span> Retro ADSB Radar Scope (50 NM Wall Board)</h1>
     <div style="display: flex; align-items: center; gap: 0.75rem;">
-      <div id="audio-indicator" style="background: rgba(30, 41, 59, 0.9); border: 1px solid var(--accent-green); color: var(--accent-green); padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.7rem; font-weight: 600;">🔊 Audio: ACTIVE</div>
-      <div id="connection-status" style="font-size: 0.75rem; color: var(--accent-blue);">Initializing Feed...</div>
+      <div id="audio-indicator" style="background: rgba(5, 20, 10, 0.9); border: 1px solid var(--accent-green); color: var(--accent-green); padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.7rem; font-weight: 600; box-shadow: 0 0 6px rgba(0,255,102,0.3);">🔊 Audio: ACTIVE</div>
+      <div id="connection-status" style="font-size: 0.75rem; color: var(--accent-green);">Initializing Feed...</div>
     </div>
   </header>
 
@@ -331,7 +340,7 @@
 
     <aside class="sidebar">
       <div class="panel">
-        <div class="panel-title" style="color: var(--accent-military);">Active Military Transponders</div>
+        <div class="panel-title">Active Military Transponders</div>
         <div id="aircraft-grid" class="aircraft-grid">
           <div style="color:var(--text-dim); font-size:0.75rem; padding: 0.5rem; text-align:center;">Scanning sector...</div>
         </div>
@@ -354,11 +363,11 @@
         <div class="route-container">
           <div class="route-row">
             <span class="route-label">From</span>
-            <span id="sb-from" style="color: #f8fafc;">--</span>
+            <span id="sb-from" style="color: var(--text-main);">--</span>
           </div>
           <div class="route-row">
             <span class="route-label">To</span>
-            <span id="sb-to" style="color: #f8fafc;">--</span>
+            <span id="sb-to" style="color: var(--text-main);">--</span>
           </div>
         </div>
       </div>
@@ -596,11 +605,11 @@
 
       const radiusMeters = userConfig.radiusNM * 1852;
       radarCircle = L.circle([userConfig.lat, userConfig.lon], {
-        color: '#059669',
-        weight: 3,
-        opacity: 0.9,
-        fillColor: '#10b981',
-        fillOpacity: 0.04,
+        color: '#00ff66',
+        weight: 2,
+        opacity: 0.8,
+        fillColor: '#00ff66',
+        fillOpacity: 0.05,
         radius: radiusMeters
       }).addTo(map);
 
@@ -675,12 +684,12 @@
       const statusEl = document.getElementById('connection-status');
       if (isConnected) {
         statusEl.innerText = `Live Connected (${liveAircraft.length} targets)`;
-        statusEl.style.color = '#10b981';
+        statusEl.style.color = '#00ff66';
         renderFlightBoard(liveAircraft);
         updateNearestScrollboard(liveAircraft);
       } else {
         statusEl.innerText = `Connecting... (Retrying)`;
-        statusEl.style.color = '#f59e0b';
+        statusEl.style.color = '#ffb000';
       }
     }
 
@@ -724,11 +733,11 @@
             <span style="font-size:0.6rem; color:var(--accent-military); font-weight:bold; text-align:center;">MIL</span>
           </div>
           <div style="flex: 1; min-width: 0;">
-            <div style="font-weight:bold; font-size:0.8rem; color:var(--accent-military); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${ac.flight ? ac.flight.trim() : ac.hex}</div>
+            <div style="font-weight:bold; font-size:0.8rem; color:var(--accent-military); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 0 5px rgba(255,176,0,0.4);">${ac.flight ? ac.flight.trim() : ac.hex}</div>
             <div style="font-size:0.68rem; color:var(--text-dim);">[${ac.t || 'MIL'}] • ${ac.gs || 0} kts</div>
           </div>
           <div style="text-align:right; flex-shrink: 0;">
-            <div style="font-weight:bold; color:var(--accent-green); font-size:0.8rem;">${dist.toFixed(1)} NM</div>
+            <div style="font-weight:bold; color:var(--accent-green); font-size:0.8rem; text-shadow: 0 0 5px rgba(0,255,102,0.4);">${dist.toFixed(1)} NM</div>
             <div style="font-size:0.68rem; color:var(--text-dim);">${ac.alt_baro || 'Ground'} ft</div>
           </div>
         `;
@@ -775,9 +784,9 @@
       const vertRate = lockedAircraft.baro_rate !== undefined ? lockedAircraft.baro_rate : 0;
       const rateEl = document.getElementById('sb-rate');
       if (vertRate > 30) {
-        rateEl.innerHTML = `<span style="color: var(--accent-green);">▲ Climbing (+${vertRate} ft/min)</span>`;
+        rateEl.innerHTML = `<span style="color: var(--accent-green); text-shadow: 0 0 6px rgba(0,255,102,0.4);">▲ Climbing (+${vertRate} ft/min)</span>`;
       } else if (vertRate < -30) {
-        rateEl.innerHTML = `<span style="color: var(--accent-red);">▼ Descending (${vertRate} ft/min)</span>`;
+        rateEl.innerHTML = `<span style="color: var(--accent-red); text-shadow: 0 0 6px rgba(255,51,51,0.4);">▼ Descending (${vertRate} ft/min)</span>`;
       } else {
         rateEl.innerHTML = `<span style="color: var(--text-dim);">— Level Flight</span>`;
       }
@@ -855,7 +864,12 @@
       const edgePt = map.latLngToContainerPoint([edgeLat, userConfig.lon]);
       const maxRadiusPx = Math.abs(edgePt.y - centerPt.y);
 
-      ctx.strokeStyle = 'rgba(16, 185, 129, 0.25)';
+      // Apply retro phosphor glow effect
+      ctx.shadowColor = '#00ff66';
+      ctx.shadowBlur = 8;
+
+      // Concentric range circles
+      ctx.strokeStyle = 'rgba(0, 255, 102, 0.35)';
       ctx.lineWidth = 1;
       [0.25, 0.5, 0.75, 1.0].forEach((factor) => {
         const r = maxRadiusPx * factor;
@@ -863,37 +877,54 @@
         ctx.arc(centerPt.x, centerPt.y, r, 0, 2 * Math.PI);
         ctx.stroke();
 
-        ctx.fillStyle = 'rgba(16, 185, 129, 0.6)';
+        ctx.fillStyle = 'rgba(0, 255, 102, 0.8)';
         ctx.font = '9px system-ui';
         ctx.fillText(`${(userConfig.radiusNM * factor).toFixed(0)} NM`, centerPt.x + 4, centerPt.y - r + 10);
       });
 
+      // Crosshairs
       ctx.beginPath();
       ctx.moveTo(centerPt.x - maxRadiusPx, centerPt.y);
       ctx.lineTo(centerPt.x + maxRadiusPx, centerPt.y);
       ctx.moveTo(centerPt.x, centerPt.y - maxRadiusPx);
       ctx.lineTo(centerPt.x, centerPt.y + maxRadiusPx);
-      ctx.strokeStyle = 'rgba(16, 185, 129, 0.2)';
+      ctx.strokeStyle = 'rgba(0, 255, 102, 0.25)';
       ctx.stroke();
 
-      ctx.fillStyle = '#10b981';
+      // Cardinal points
+      ctx.fillStyle = '#00ff66';
       ctx.font = 'bold 11px system-ui';
       ctx.fillText('N', centerPt.x - 4, centerPt.y - maxRadiusPx - 5);
       ctx.fillText('S', centerPt.x - 4, centerPt.y + maxRadiusPx + 15);
       ctx.fillText('E', centerPt.x + maxRadiusPx + 5, centerPt.y + 4);
       ctx.fillText('W', centerPt.x - maxRadiusPx - 18, centerPt.y + 4);
 
+      // Rotating radar sweep line with phosphor persistence trail
       sweepAngle += 0.015;
+      for (let i = 0; i < 15; i++) {
+        const trailAngle = sweepAngle - (i * 0.012);
+        const trailX = centerPt.x + Math.cos(trailAngle) * maxRadiusPx;
+        const trailY = centerPt.y + Math.sin(trailAngle) * maxRadiusPx;
+        
+        ctx.beginPath();
+        ctx.moveTo(centerPt.x, centerPt.y);
+        ctx.lineTo(trailX, trailY);
+        ctx.strokeStyle = `rgba(0, 255, 102, ${0.12 * (1 - i / 15)})`;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+
+      // Main sweep line
       const sweepX = centerPt.x + Math.cos(sweepAngle) * maxRadiusPx;
       const sweepY = centerPt.y + Math.sin(sweepAngle) * maxRadiusPx;
-
       ctx.beginPath();
       ctx.moveTo(centerPt.x, centerPt.y);
       ctx.lineTo(sweepX, sweepY);
-      ctx.strokeStyle = 'rgba(16, 185, 129, 0.6)';
-      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = 'rgba(0, 255, 102, 0.9)';
+      ctx.lineWidth = 2;
       ctx.stroke();
 
+      // Aircraft Trails
       Object.keys(aircraftTrails).forEach(hex => {
         const trail = aircraftTrails[hex];
         if (trail.length > 1) {
@@ -903,12 +934,13 @@
             if (i === 0) ctx.moveTo(p.x, p.y);
             else ctx.lineTo(p.x, p.y);
           }
-          ctx.strokeStyle = 'rgba(59, 130, 246, 0.25)';
+          ctx.strokeStyle = 'rgba(0, 191, 255, 0.3)';
           ctx.lineWidth = 1;
           ctx.stroke();
         }
       });
 
+      // Render Aircraft Targets
       if (liveAircraft && liveAircraft.length > 0) {
         liveAircraft.forEach(ac => {
           if (!ac.lat || !ac.lon) return;
@@ -922,11 +954,16 @@
             const pulseRadius = 14 + Math.sin(Date.now() / 150) * 4;
             ctx.beginPath();
             ctx.arc(pt.x, pt.y, pulseRadius, 0, 2 * Math.PI);
-            ctx.strokeStyle = '#ef4444';
+            ctx.strokeStyle = '#ff3333';
             ctx.lineWidth = 2.5;
+            ctx.shadowColor = '#ff3333';
+            ctx.shadowBlur = 12;
             ctx.stroke();
+            ctx.shadowColor = '#00ff66';
+            ctx.shadowBlur = 8;
           }
 
+          // Heading vector line
           if (ac.track !== undefined) {
             const trackRad = (ac.track - 90) * (Math.PI / 180);
             const lineLen = 22;
@@ -935,7 +972,7 @@
             ctx.beginPath();
             ctx.moveTo(pt.x, pt.y);
             ctx.lineTo(endX, endY);
-            ctx.strokeStyle = isMil ? '#ff007f' : '#3b82f6';
+            ctx.strokeStyle = isMil ? '#ffb000' : '#00bfff';
             ctx.lineWidth = 1.5;
             ctx.stroke();
           }
@@ -948,14 +985,15 @@
           const silhouetteType = getSilhouetteType(ac.t);
           drawAircraftSilhouettePath(ctx, silhouetteType);
 
-          ctx.fillStyle = isEmg ? '#ef4444' : (isMil ? '#ff007f' : '#3b82f6');
+          ctx.fillStyle = isEmg ? '#ff3333' : (isMil ? '#ffb000' : '#00ff66');
           ctx.fill();
           ctx.lineWidth = 1;
-          ctx.strokeStyle = '#ffffff';
+          ctx.strokeStyle = '#020704';
           ctx.stroke();
           ctx.restore();
 
-          ctx.fillStyle = '#f8fafc';
+          // Target Label
+          ctx.fillStyle = isMil ? '#ffb000' : '#00ff66';
           ctx.font = 'bold 10px system-ui';
           const label = ac.flight ? ac.flight.trim() : ac.hex;
           const altText = ac.alt_baro ? ` FL${Math.round(ac.alt_baro / 100)}` : '';
