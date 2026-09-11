@@ -441,6 +441,8 @@
     let lockedAircraft = null;
     let isFetching = false;
     let radarCircle = null;
+    let pollBackoffUntil = 0;
+    let consecutive429s = 0;
     const aircraftTrails = {};
 
     let audioAlertsEnabled = true;
@@ -603,6 +605,13 @@
         if (!callsign) return;
         if (routeCache[callsign] !== undefined) return; // already resolved or known-empty
         if (seen.has(callsign)) return;
+        // adsbdb only accepts plain ICAO-style callsigns: letters/digits, no spaces or dashes.
+        // Tactical callsigns ("LEADER 4"), bare registrations ("G-VBZZ"), and short fragments
+        // ("C4", "P2") always 400/404 - skip the network round-trip and cache as empty locally.
+        if (!/^[A-Z0-9]{3,8}$/.test(callsign)) {
+          routeCache[callsign] = null;
+          return;
+        }
         seen.add(callsign);
         toQuery.push(callsign);
       });
@@ -878,6 +887,15 @@
 
     async function fetchLiveFlights() {
       if (isFetching) return;
+
+      if (Date.now() < pollBackoffUntil) {
+        const secsLeft = Math.ceil((pollBackoffUntil - Date.now()) / 1000);
+        const statusEl = document.getElementById('connection-status');
+        statusEl.innerText = `Rate limited - backing off (${secsLeft}s)`;
+        statusEl.style.color = '#ff3333';
+        return;
+      }
+
       isFetching = true;
 
       // airplanes.live's public /v2/point/ endpoint now requires a feeder-linked API key
@@ -886,10 +904,15 @@
         `https://api.adsb.lol/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`
       ];
       let success = false;
+      let sawRateLimit = false;
 
       for (let url of endpoints) {
         try {
           const response = await fetch(url, { headers: { 'Accept': 'application/json' } });
+          if (response.status === 429) {
+            sawRateLimit = true;
+            continue;
+          }
           if (response.ok) {
             const data = await response.json();
             const aircrafts = data.ac || data.aircraft;
@@ -919,7 +942,20 @@
         } catch (err) {}
       }
 
-      if (!success) updateUIState(false);
+      if (success) {
+        consecutive429s = 0;
+        pollBackoffUntil = 0;
+      } else if (sawRateLimit) {
+        consecutive429s++;
+        // 15s, 30s, 60s, 120s, ... capped at 5 minutes
+        const backoffMs = Math.min(300000, 15000 * Math.pow(2, consecutive429s - 1));
+        pollBackoffUntil = Date.now() + backoffMs;
+        const statusEl = document.getElementById('connection-status');
+        statusEl.innerText = `Rate limited - backing off (${Math.ceil(backoffMs / 1000)}s)`;
+        statusEl.style.color = '#ff3333';
+      } else {
+        updateUIState(false);
+      }
       isFetching = false;
     }
 
