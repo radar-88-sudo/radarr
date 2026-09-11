@@ -635,7 +635,6 @@
         radius: radiusMeters
       }).addTo(map);
 
-      // Fit bounds then zoom in one extra level closer to crop out surrounding UK map area
       map.fitBounds(radarCircle.getBounds(), { padding: [15, 15] });
       const lockedZoom = map.getZoom() + 1;
       map.setView([userConfig.lat, userConfig.lon], lockedZoom);
@@ -725,8 +724,14 @@
       if (dbFlags & 1) return true;
       const cat = (ac.category || '').toUpperCase();
       if (cat === 'A7') return true;
+
       const milTypes = ['F16', 'F15', 'F18', 'F35', 'F22', 'EF20', 'EUFI', 'TOR', 'HAWK', 'A10', 'C130', 'C17', 'A400', 'K35R', 'E3TF', 'V22', 'CH47', 'AH64', 'UH60', 'NH90', 'TYPH', 'P8', 'RC135', 'KC135'];
-      if (milTypes.some(s => type.includes(s))) return true;
+      
+      if (milTypes.some(s => {
+        if (s === 'C17') return type === 'C17' || type === 'C-17';
+        return type.includes(s);
+      })) return true;
+
       const milPrefixes = ['RRR', 'ASCOT', 'SHF', 'VORTEX', 'RCH', 'DUKE', 'BOOM', 'REACH', 'CNV', 'GUN', 'VIPER'];
       if (milPrefixes.some(prefix => flight.startsWith(prefix))) return true;
       return false;
