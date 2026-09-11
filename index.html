@@ -454,6 +454,7 @@
     // callsign -> {fromCode, toCode, fromName, toName} on a real match,
     // or null once we've queried and confirmed there's no route data (avoids re-querying every poll)
     const routeCache = {};
+    let adsbdbBackoffUntil = 0;
 
     let scrollState = 'PAUSED_TOP';
     let scrollTimer = 120;
@@ -617,35 +618,37 @@
       });
 
       if (toQuery.length === 0) return;
+      if (Date.now() < adsbdbBackoffUntil) return; // still cooling off from a recent 429
 
-      const CONCURRENCY = 5;
-      for (let i = 0; i < toQuery.length; i += CONCURRENCY) {
-        const batch = toQuery.slice(i, i + CONCURRENCY);
-        await Promise.all(batch.map(async callsign => {
-          try {
-            const res = await fetch(`https://api.adsbdb.com/v0/callsign/${encodeURIComponent(callsign)}`);
-            if (!res.ok) {
-              routeCache[callsign] = null;
-              return;
-            }
-            const data = await res.json();
-            const route = data && data.response && data.response.flightroute;
-            if (route && route.origin && route.destination) {
-              const from = route.origin;
-              const to = route.destination;
-              routeCache[callsign] = {
-                fromCode: from.iata_code || from.icao_code,
-                toCode: to.iata_code || to.icao_code,
-                fromName: from.name + (from.municipality ? `, ${from.municipality}` : ''),
-                toName: to.name + (to.municipality ? `, ${to.municipality}` : '')
-              };
-            } else {
-              routeCache[callsign] = null; // known-empty, don't re-query every poll
-            }
-          } catch (err) {
-            routeCache[callsign] = null;
+      // Only ever 0-1 callsigns now (the locked/nearest aircraft), so no batching needed.
+      for (const callsign of toQuery) {
+        try {
+          const res = await fetch(`https://api.adsbdb.com/v0/callsign/${encodeURIComponent(callsign)}`);
+          if (res.status === 429) {
+            adsbdbBackoffUntil = Date.now() + 30000; // back off 30s, retry next poll after that
+            continue;
           }
-        }));
+          if (!res.ok) {
+            routeCache[callsign] = null;
+            continue;
+          }
+          const data = await res.json();
+          const route = data && data.response && data.response.flightroute;
+          if (route && route.origin && route.destination) {
+            const from = route.origin;
+            const to = route.destination;
+            routeCache[callsign] = {
+              fromCode: from.iata_code || from.icao_code,
+              toCode: to.iata_code || to.icao_code,
+              fromName: from.name + (from.municipality ? `, ${from.municipality}` : ''),
+              toName: to.name + (to.municipality ? `, ${to.municipality}` : '')
+            };
+          } else {
+            routeCache[callsign] = null; // known-empty, don't re-query every poll
+          }
+        } catch (err) {
+          routeCache[callsign] = null;
+        }
       }
     }
 
@@ -765,6 +768,18 @@
                 Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos(dLon);
       let brng = Math.atan2(y, x) * 180 / Math.PI;
       return Math.round((brng + 360) % 360);
+    }
+
+    // The only place a route (From/To) is ever displayed is the scrollboard, locked onto
+    // whichever aircraft is nearest. Route lookups should only ever target that one aircraft -
+    // never the whole liveAircraft list, or we flood adsbdb with lookups nobody sees.
+    function findNearestAircraft(acList) {
+      const validAc = (acList || []).filter(a => a.lat && a.lon);
+      if (validAc.length === 0) return null;
+      return [...validAc].sort((a, b) =>
+        calcDistanceNM(userConfig.lat, userConfig.lon, a.lat, a.lon) -
+        calcDistanceNM(userConfig.lat, userConfig.lon, b.lat, b.lon)
+      )[0];
     }
 
     async function fetchAircraftPhoto(ac, isMil) {
@@ -930,9 +945,10 @@
                 }
               });
 
-              // Resolve real routes for any newly-seen callsigns before rendering,
-              // so the scrollboard shows real From/To on first paint where possible.
-              await fetchRoutesForAircraft(liveAircraft);
+              // Route lookups only matter for the scrollboard's locked (nearest) aircraft -
+              // resolving the whole liveAircraft list every poll needlessly floods adsbdb.
+              const nearest = findNearestAircraft(liveAircraft);
+              if (nearest) await fetchRoutesForAircraft([nearest]);
 
               updateUIState(true);
               success = true;
@@ -1099,13 +1115,8 @@
 
     function updateNearestScrollboard(acList) {
       if (!acList || acList.length === 0) return;
-      const validAc = acList.filter(a => a.lat && a.lon);
-      if (validAc.length === 0) return;
-
-      lockedAircraft = [...validAc].sort((a, b) => 
-        calcDistanceNM(userConfig.lat, userConfig.lon, a.lat, a.lon) - 
-        calcDistanceNM(userConfig.lat, userConfig.lon, b.lat, b.lon)
-      )[0];
+      lockedAircraft = findNearestAircraft(acList);
+      if (!lockedAircraft) return;
 
       const dist = calcDistanceNM(userConfig.lat, userConfig.lon, lockedAircraft.lat, lockedAircraft.lon);
       const bearing = calcBearing(userConfig.lat, userConfig.lon, lockedAircraft.lat, lockedAircraft.lon);
