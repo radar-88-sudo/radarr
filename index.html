@@ -18,6 +18,7 @@
       --accent-blue: #00bfff;
       --accent-military: #ffb000;
       --accent-red: #ff3333;
+      --accent-amber-dim: #7a5a00;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -55,6 +56,37 @@
       0% { background: rgba(255, 0, 0, 0); box-shadow: inset 0 0 0px rgba(255,0,0,0); }
       50% { background: rgba(255, 0, 0, 0.22); box-shadow: inset 0 0 120px rgba(255,0,0,0.5); }
       100% { background: rgba(255, 0, 0, 0); box-shadow: inset 0 0 0px rgba(255,0,0,0); }
+    }
+
+    /* Tap-to-start overlay (needed to satisfy browser autoplay/audio-gesture requirements) */
+    #start-overlay {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100vw; height: 100vh;
+      background: rgba(1, 5, 2, 0.97);
+      z-index: 10000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      cursor: pointer;
+      user-select: none;
+    }
+    #start-overlay.hidden { display: none; }
+    #start-overlay .start-title {
+      font-size: 1.1rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent-green);
+      text-shadow: 0 0 10px rgba(0,255,102,0.5);
+    }
+    #start-overlay .start-sub {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+    }
+    #start-overlay .pulse-dot {
+      width: 10px; height: 10px;
     }
 
     header {
@@ -323,6 +355,30 @@
       flex-shrink: 0;
     }
 
+    .route-estimated .route-row span:not(.route-label) {
+      color: var(--accent-amber-dim) !important;
+    }
+
+    .route-source-tag {
+      font-size: 0.55rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      padding: 0.03rem 0.3rem;
+      border-radius: 3px;
+      margin-left: 0.3rem;
+    }
+
+    .route-source-tag.confirmed {
+      color: var(--accent-green);
+      border: 1px solid var(--accent-green);
+    }
+
+    .route-source-tag.estimated {
+      color: var(--accent-military);
+      border: 1px solid var(--accent-amber-dim);
+    }
+
     .metric-group {
       display: flex;
       flex-direction: column;
@@ -357,6 +413,12 @@
 
   <!-- Full Screen Red Pulse Overlay -->
   <div id="screen-pulse-overlay"></div>
+
+  <!-- Tap-to-start overlay: browsers block AudioContext/SpeechSynthesis until a user gesture -->
+  <div id="start-overlay">
+    <div class="start-title"><span class="pulse-dot"></span>&nbsp; Retro ADSB Radar Scope</div>
+    <div class="start-sub">Tap or click anywhere to start the feed and enable audio alerts</div>
+  </div>
 
   <header>
     <h1><span class="pulse-dot"></span> Retro ADSB Radar Scope (35 NM Wall Board)</h1>
@@ -394,7 +456,7 @@
       <div class="banner-col">
         <div id="sb-airline" class="airline-heading">AWAITING LOCK</div>
         <div id="sb-type" class="aircraft-meta">Type: --</div>
-        <div class="route-container">
+        <div class="route-container" id="sb-route-container">
           <div class="route-row">
             <span class="route-label">From</span>
             <span id="sb-from" style="color: var(--text-main);">--</span>
@@ -402,6 +464,7 @@
           <div class="route-row">
             <span class="route-label">To</span>
             <span id="sb-to" style="color: var(--text-main);">--</span>
+            <span id="sb-route-tag" class="route-source-tag" style="display:none;"></span>
           </div>
         </div>
       </div>
@@ -433,7 +496,7 @@
           onerror="document.getElementById('connection-status').innerText='LEAFLET FAILED TO LOAD - CHECK NETWORK'; document.getElementById('connection-status').style.color='#ff3333';"></script>
 
   <script>
-    const userConfig = { lat: 52.9529, lon: -0.9547, radiusNM: 250 }; // adsb.lol /v2/point/ caps at 250 NM
+    const userConfig = { lat: 52.9529, lon: -0.9547, radiusNM: 250 };
     let map = null;
     let canvas = null;
     let ctx = null;
@@ -446,15 +509,20 @@
     const aircraftTrails = {};
 
     let audioAlertsEnabled = true;
-    const announcedMilHexes = new Set();
     const pulsed35Hexes = new Set();
     const pulsed5Hexes = new Set();
     let audioCtx = null;
+    let feedStarted = false;
 
-    // callsign -> {fromCode, toCode, fromName, toName} on a real match,
-    // or null once we've queried and confirmed there's no route data (avoids re-querying every poll)
+    // callsign -> {fromCode, toCode, fromName, toName, source: 'adsbdb'|'hexdb'|'estimated'},
+    // or null once every source has been queried and confirmed there's no real data
+    // (avoids re-querying every poll for callsigns nobody has data on)
     const routeCache = {};
     let adsbdbBackoffUntil = 0;
+    let hexdbBackoffUntil = 0;
+
+    // Simple in-memory photo cache so we don't re-fetch the same aircraft's photo every 12s poll
+    const photoCache = {}; // key -> url string, or null for known-empty
 
     let scrollState = 'PAUSED_TOP';
     let scrollTimer = 120;
@@ -482,6 +550,36 @@
           audioCtx.resume();
         }
       } catch (e) {}
+    }
+
+    // Runs on the first user gesture (tap/click on the start overlay). Browsers require a
+    // real user gesture before AudioContext or SpeechSynthesis will produce sound, so nothing
+    // in announceMilitaryAircraft() can reliably fire until this has run at least once.
+    function startFeed() {
+      if (feedStarted) return;
+      feedStarted = true;
+
+      initKioskAudio();
+      if ('speechSynthesis' in window) {
+        // Nudge speechSynthesis awake with a silent utterance, inside the gesture handler.
+        const warmup = new SpeechSynthesisUtterance('');
+        warmup.volume = 0;
+        window.speechSynthesis.speak(warmup);
+      }
+
+      const overlay = document.getElementById('start-overlay');
+      if (overlay) overlay.classList.add('hidden');
+
+      canvas = document.getElementById('radarCanvas');
+      ctx = canvas.getContext('2d');
+
+      initMap();
+      resizeCanvas();
+      window.addEventListener('resize', resizeCanvas);
+
+      requestAnimationFrame(drawRadarScope);
+      fetchLiveFlights();
+      setInterval(fetchLiveFlights, 12000);
     }
 
     function toggleAudio() {
@@ -593,117 +691,157 @@
       'OMDB': 'Dubai International, UAE'
     };
 
-    // Batch-resolve real routes for any aircraft whose callsign we haven't looked up yet,
-    // via adsbdb.com's free callsign->route lookup. No lat/lng needed - just the callsign.
-    // adsbdb has no batch endpoint, so we fire individual GETs with limited concurrency
-    // to stay well under its rate limit.
-    async function fetchRoutesForAircraft(acList) {
-      const toQuery = [];
-      const seen = new Set();
+    // ---------------------------------------------------------------------
+    // Route resolution: adsbdb.com -> hexdb.io -> local heuristic guess.
+    // Only ever called for the single locked/nearest aircraft (see
+    // fetchLiveFlights), never the whole liveAircraft list, so this stays
+    // well within both services' free rate limits.
+    // ---------------------------------------------------------------------
 
-      acList.forEach(ac => {
-        const callsign = (ac.flight || '').trim().toUpperCase();
-        if (!callsign) return;
-        if (routeCache[callsign] !== undefined) return; // already resolved or known-empty
-        if (seen.has(callsign)) return;
-        // adsbdb only accepts plain ICAO-style callsigns: letters/digits, no spaces or dashes.
-        // Tactical callsigns ("LEADER 4"), bare registrations ("G-VBZZ"), and short fragments
-        // ("C4", "P2") always 400/404 - skip the network round-trip and cache as empty locally.
-        if (!/^[A-Z0-9]{3,8}$/.test(callsign)) {
-          routeCache[callsign] = null;
-          return;
+    async function queryAdsbdb(callsign) {
+      if (Date.now() < adsbdbBackoffUntil) return undefined; // cooling off, try next poll
+      try {
+        const res = await fetch(`https://api.adsbdb.com/v0/callsign/${encodeURIComponent(callsign)}`);
+        if (res.status === 429) {
+          adsbdbBackoffUntil = Date.now() + 30000;
+          return undefined;
         }
-        seen.add(callsign);
-        toQuery.push(callsign);
-      });
-
-      if (toQuery.length === 0) return;
-      if (Date.now() < adsbdbBackoffUntil) return; // still cooling off from a recent 429
-
-      // Only ever 0-1 callsigns now (the locked/nearest aircraft), so no batching needed.
-      for (const callsign of toQuery) {
-        try {
-          const res = await fetch(`https://api.adsbdb.com/v0/callsign/${encodeURIComponent(callsign)}`);
-          if (res.status === 429) {
-            adsbdbBackoffUntil = Date.now() + 30000; // back off 30s, retry next poll after that
-            continue;
-          }
-          if (!res.ok) {
-            routeCache[callsign] = null;
-            continue;
-          }
-          const data = await res.json();
-          const route = data && data.response && data.response.flightroute;
-          if (route && route.origin && route.destination) {
-            const from = route.origin;
-            const to = route.destination;
-            routeCache[callsign] = {
-              fromCode: from.iata_code || from.icao_code,
-              toCode: to.iata_code || to.icao_code,
-              fromName: from.name + (from.municipality ? `, ${from.municipality}` : ''),
-              toName: to.name + (to.municipality ? `, ${to.municipality}` : '')
-            };
-          } else {
-            routeCache[callsign] = null; // known-empty, don't re-query every poll
-          }
-        } catch (err) {
-          routeCache[callsign] = null;
+        if (!res.ok) return null; // 404 etc - confirmed no data from this source
+        const data = await res.json();
+        const route = data && data.response && data.response.flightroute;
+        if (route && route.origin && route.destination) {
+          const from = route.origin;
+          const to = route.destination;
+          return {
+            fromCode: from.iata_code || from.icao_code,
+            toCode: to.iata_code || to.icao_code,
+            fromName: from.name + (from.municipality ? `, ${from.municipality}` : ''),
+            toName: to.name + (to.municipality ? `, ${to.municipality}` : ''),
+            source: 'adsbdb'
+          };
         }
+        return null;
+      } catch (err) {
+        return null;
       }
+    }
+
+    async function queryHexdb(callsign) {
+      if (Date.now() < hexdbBackoffUntil) return undefined;
+      try {
+        const res = await fetch(`https://hexdb.io/api/v1/route/icao/${encodeURIComponent(callsign)}`);
+        if (res.status === 429) {
+          hexdbBackoffUntil = Date.now() + 30000;
+          return undefined;
+        }
+        if (!res.ok) return null;
+        const data = await res.json();
+        // hexdb returns {"orig_icao":"EGLL","orig_iata":"LHR",...,"dest_icao":"LEBL","dest_iata":"BCN",...}
+        // treat a missing/empty pair as "no data" rather than a false-positive route.
+        if (data && (data.orig_iata || data.orig_icao) && (data.dest_iata || data.dest_icao)) {
+          return {
+            fromCode: data.orig_iata || data.orig_icao,
+            toCode: data.dest_iata || data.dest_icao,
+            fromName: data.orig_icao ? (airportDatabase[data.orig_icao] || '') : '',
+            toName: data.dest_icao ? (airportDatabase[data.dest_icao] || '') : '',
+            source: 'hexdb'
+          };
+        }
+        return null;
+      } catch (err) {
+        return null;
+      }
+    }
+
+    // Fetches a real route for the single locked/nearest aircraft, trying adsbdb first
+    // and hexdb.io second. Caches whatever the outcome is (a route, or a confirmed "null")
+    // so we don't re-query every poll for a callsign both sources don't have.
+    async function fetchRoutesForAircraft(acList) {
+      const ac = acList[0];
+      if (!ac) return;
+      const callsign = (ac.flight || '').trim().toUpperCase();
+      if (!callsign) return;
+      if (routeCache[callsign] !== undefined) return; // already resolved (real or confirmed-empty)
+
+      // Both adsbdb and hexdb only accept plain ICAO-style callsigns: letters/digits, no
+      // spaces or dashes. Tactical callsigns ("LEADER 4"), bare registrations ("G-VBZZ"),
+      // and short fragments ("C4", "P2") always fail - skip the network round-trips.
+      if (!/^[A-Z0-9]{3,8}$/.test(callsign)) {
+        routeCache[callsign] = null;
+        return;
+      }
+
+      let result = await queryAdsbdb(callsign);
+      if (result === undefined) return; // rate-limited, leave unresolved and retry next poll
+      if (!result) {
+        result = await queryHexdb(callsign);
+        if (result === undefined) return;
+      }
+
+      routeCache[callsign] = result || null; // null = confirmed no data from either source
     }
 
     function resolveFlightRoute(flightStr, ac) {
       if (ac.orig && ac.dest) {
-        return { fromCode: ac.orig.toUpperCase(), toCode: ac.dest.toUpperCase() };
+        return { fromCode: ac.orig.toUpperCase(), toCode: ac.dest.toUpperCase(), source: 'adsb-payload' };
       }
       if (ac.from && ac.to) {
-        return { fromCode: ac.from.toUpperCase(), toCode: ac.to.toUpperCase() };
+        return { fromCode: ac.from.toUpperCase(), toCode: ac.to.toUpperCase(), source: 'adsb-payload' };
       }
 
       const callsign = (flightStr || '').toUpperCase().trim();
 
-      // Real route data from adsb.lol, if we have it for this callsign.
+      // Real route data from adsbdb/hexdb, if we resolved it for this callsign.
       const cached = routeCache[callsign];
       if (cached) return cached;
 
+      // Nothing confirmed from either source - fall through to a heuristic guess.
+      // This is clearly NOT real routing data, just a plausible-looking placeholder based
+      // on callsign prefix or current heading. Callers must label this distinctly (see
+      // updateNearestScrollboard) rather than rendering it identically to a confirmed route.
       const heading = ac.track !== undefined ? ac.track : 0;
 
-      if (isMilitary(ac)) {
-        if (callsign.startsWith('RRR') || callsign.startsWith('ASCOT')) {
-          return { fromCode: 'EGVN', toCode: 'EGUN' };
-        } else if (callsign.startsWith('SHF') || callsign.startsWith('VORTEX')) {
-          return { fromCode: 'EGXC', toCode: 'EGVN' };
-        } else if (callsign.startsWith('RCH') || callsign.startsWith('REACH') || callsign.startsWith('DUKE')) {
-          return { fromCode: 'ETAR', toCode: 'EGUN' };
-        } else if (callsign.startsWith('BOOM') || callsign.startsWith('ASY')) {
-          return { fromCode: 'EGVA', toCode: 'EGVN' };
+      const guess = (() => {
+        if (isMilitary(ac)) {
+          if (callsign.startsWith('RRR') || callsign.startsWith('ASCOT')) {
+            return { fromCode: 'EGVN', toCode: 'EGUN' };
+          } else if (callsign.startsWith('SHF') || callsign.startsWith('VORTEX')) {
+            return { fromCode: 'EGXC', toCode: 'EGVN' };
+          } else if (callsign.startsWith('RCH') || callsign.startsWith('REACH') || callsign.startsWith('DUKE')) {
+            return { fromCode: 'ETAR', toCode: 'EGUN' };
+          } else if (callsign.startsWith('BOOM') || callsign.startsWith('ASY')) {
+            return { fromCode: 'EGVA', toCode: 'EGVN' };
+          }
+          return { fromCode: 'EGVN', toCode: 'EGXC' };
         }
-        return { fromCode: 'EGVN', toCode: 'EGXC' };
-      }
 
-      if (callsign.startsWith('RYR')) {
-        return { fromCode: 'EGNX', toCode: 'EHAM' };
-      } else if (callsign.startsWith('EXS') || callsign.startsWith('LS')) {
-        return { fromCode: 'EGNX', toCode: 'LEMD' };
-      } else if (callsign.startsWith('EZY') || callsign.startsWith('U2')) {
-        return { fromCode: 'EGCC', toCode: 'LFPG' };
-      } else if (callsign.startsWith('BAW') || callsign.startsWith('SHT')) {
-        return { fromCode: 'EGLL', toCode: 'KJFK' };
-      } else if (callsign.startsWith('KLM')) {
-        return { fromCode: 'EHAM', toCode: 'EGBB' };
-      } else if (callsign.startsWith('DLH')) {
-        return { fromCode: 'EDDF', toCode: 'EGLL' };
-      }
+        if (callsign.startsWith('RYR')) {
+          return { fromCode: 'EGNX', toCode: 'EHAM' };
+        } else if (callsign.startsWith('EXS') || callsign.startsWith('LS')) {
+          return { fromCode: 'EGNX', toCode: 'LEMD' };
+        } else if (callsign.startsWith('EZY') || callsign.startsWith('U2')) {
+          return { fromCode: 'EGCC', toCode: 'LFPG' };
+        } else if (callsign.startsWith('BAW') || callsign.startsWith('SHT')) {
+          return { fromCode: 'EGLL', toCode: 'KJFK' };
+        } else if (callsign.startsWith('KLM')) {
+          return { fromCode: 'EHAM', toCode: 'EGBB' };
+        } else if (callsign.startsWith('DLH')) {
+          return { fromCode: 'EDDF', toCode: 'EGLL' };
+        }
 
-      if (heading >= 315 || heading < 45) {
-        return { fromCode: 'EGNX', toCode: 'EGPH' };
-      } else if (heading >= 45 && heading < 135) {
-        return { fromCode: 'EGCC', toCode: 'EHAM' };
-      } else if (heading >= 135 && heading < 225) {
-        return { fromCode: 'EGPH', toCode: 'EGLL' };
-      } else {
-        return { fromCode: 'EHAM', toCode: 'EIDW' };
-      }
+        if (heading >= 315 || heading < 45) {
+          return { fromCode: 'EGNX', toCode: 'EGPH' };
+        } else if (heading >= 45 && heading < 135) {
+          return { fromCode: 'EGCC', toCode: 'EHAM' };
+        } else if (heading >= 135 && heading < 225) {
+          return { fromCode: 'EGPH', toCode: 'EGLL' };
+        } else {
+          return { fromCode: 'EHAM', toCode: 'EIDW' };
+        }
+      })();
+
+      guess.source = 'estimated';
+      return guess;
     }
 
     function announceMilitaryAircraft(ac) {
@@ -712,7 +850,7 @@
       const dist = calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon);
       let triggeredPulse = false;
 
-      if (dist <= 500.0 && !pulsed5Hexes.has(ac.hex)) {
+      if (dist <= 5.0 && !pulsed5Hexes.has(ac.hex)) {
         pulsed5Hexes.add(ac.hex);
         pulsed35Hexes.add(ac.hex);
         triggeredPulse = true;
@@ -744,7 +882,7 @@
         }, 350);
       }
 
-      if (!triggeredPulse && !pulsed35Hexes.has(ac.hex)) {
+      if (!triggeredPulse && dist <= 35.0 && !pulsed35Hexes.has(ac.hex)) {
         pulsed35Hexes.add(ac.hex);
         playAlertTone();
         triggerRedPulse();
@@ -772,7 +910,7 @@
 
     // The only place a route (From/To) is ever displayed is the scrollboard, locked onto
     // whichever aircraft is nearest. Route lookups should only ever target that one aircraft -
-    // never the whole liveAircraft list, or we flood adsbdb with lookups nobody sees.
+    // never the whole liveAircraft list, or we flood adsbdb/hexdb with lookups nobody sees.
     function findNearestAircraft(acList) {
       const validAc = (acList || []).filter(a => a.lat && a.lon);
       if (validAc.length === 0) return null;
@@ -782,12 +920,12 @@
       )[0];
     }
 
-    async function fetchAircraftPhoto(ac, isMil) {
-      const logoBox = document.getElementById('sb-logo-box');
-      if (isMil) {
-        logoBox.innerHTML = `<span class="logo-fallback" style="color: var(--accent-military);">MILITARY</span>`;
-      } else {
-        logoBox.innerHTML = `<span class="logo-fallback" id="sb-logo-text">--</span>`;
+    // Shared photo lookup with a simple cache, used by both the scrollboard and the
+    // sidebar cards so a photo already fetched this session isn't re-requested every poll.
+    async function resolveAircraftPhoto(ac) {
+      const cacheKey = (ac.r && ac.r.trim()) || (ac.t && ac.t.trim()) || ac.hex;
+      if (cacheKey && photoCache[cacheKey] !== undefined) {
+        return photoCache[cacheKey];
       }
 
       let photoUrl = null;
@@ -815,6 +953,20 @@
           }
         } catch (err) {}
       }
+
+      if (cacheKey) photoCache[cacheKey] = photoUrl;
+      return photoUrl;
+    }
+
+    async function fetchAircraftPhoto(ac, isMil) {
+      const logoBox = document.getElementById('sb-logo-box');
+      if (isMil) {
+        logoBox.innerHTML = `<span class="logo-fallback" style="color: var(--accent-military);">MILITARY</span>`;
+      } else {
+        logoBox.innerHTML = `<span class="logo-fallback" id="sb-logo-text">--</span>`;
+      }
+
+      const photoUrl = await resolveAircraftPhoto(ac);
 
       if (photoUrl) {
         logoBox.innerHTML = `<img src="${photoUrl}" alt="Aircraft Photo">`;
@@ -828,32 +980,18 @@
     async function fetchCardPhoto(ac, thumbId) {
       const thumbEl = document.getElementById(thumbId);
       if (!thumbEl) return;
-      let photoUrl = null;
 
-      if (ac.r && ac.r.trim() !== '') {
-        try {
-          const res = await fetch(`https://api.planespotters.net/pub/photos/reg/${encodeURIComponent(ac.r.trim())}`);
-          if (res.ok) {
-            const data = await res.json();
-            if (data.photos && data.photos.length > 0) photoUrl = data.photos[0].thumbnail_large.src;
-          }
-        } catch (err) {}
-      }
+      const photoUrl = await resolveAircraftPhoto(ac);
 
-      if (!photoUrl && ac.t && ac.t.trim() !== '') {
-        try {
-          const res = await fetch(`https://api.planespotters.net/pub/photos/icaotype/${encodeURIComponent(ac.t.trim())}`);
-          if (res.ok) {
-            const data = await res.json();
-            if (data.photos && data.photos.length > 0) photoUrl = data.photos[0].thumbnail_large.src;
-          }
-        } catch (err) {}
-      }
+      // The card (and its id) may have been re-rendered away while the fetch was in flight
+      // (e.g. next poll cycle) - re-grab it rather than trust the closed-over reference.
+      const liveEl = document.getElementById(thumbId);
+      if (!liveEl) return;
 
       if (photoUrl) {
-        thumbEl.innerHTML = `<img src="${photoUrl}" alt="Military Aircraft Photo">`;
+        liveEl.innerHTML = `<img src="${photoUrl}" alt="Military Aircraft Photo">`;
       } else {
-        thumbEl.innerHTML = `<span style="font-size:0.55rem; color:var(--accent-military); font-weight:bold; text-align:center;">MIL</span>`;
+        liveEl.innerHTML = `<span style="font-size:0.55rem; color:var(--accent-military); font-weight:bold; text-align:center;">MIL</span>`;
       }
     }
 
@@ -946,7 +1084,7 @@
               });
 
               // Route lookups only matter for the scrollboard's locked (nearest) aircraft -
-              // resolving the whole liveAircraft list every poll needlessly floods adsbdb.
+              // resolving the whole liveAircraft list every poll needlessly floods adsbdb/hexdb.
               const nearest = findNearestAircraft(liveAircraft);
               if (nearest) await fetchRoutesForAircraft([nearest]);
 
@@ -1156,11 +1294,32 @@
         rateEl.innerHTML = `<span style="color: var(--text-dim);">— Level Flight</span>`;
       }
 
+      // Route: real data (adsbdb/hexdb) is shown in the normal green; when nothing real was
+      // found and we fall back to the heuristic guess, the container is flagged as
+      // "estimated" (dimmer amber text + a tag) so it's never visually indistinguishable
+      // from a confirmed route.
       const route = resolveFlightRoute(flightStr, lockedAircraft);
+      const isEstimated = route.source === 'estimated';
+
+      const routeContainer = document.getElementById('sb-route-container');
+      routeContainer.classList.toggle('route-estimated', isEstimated);
+
       document.getElementById('sb-from').innerHTML =
         `<b>${route.fromCode}</b> — <span style="color:var(--text-dim);">${route.fromName || airportDatabase[route.fromCode] || 'Aerodrome'}</span>`;
       document.getElementById('sb-to').innerHTML =
         `<b>${route.toCode}</b> — <span style="color:var(--text-dim);">${route.toName || airportDatabase[route.toCode] || 'Aerodrome'}</span>`;
+
+      const tagEl = document.getElementById('sb-route-tag');
+      tagEl.style.display = 'inline-block';
+      if (isEstimated) {
+        tagEl.className = 'route-source-tag estimated';
+        tagEl.innerText = 'EST';
+        tagEl.title = 'No confirmed route data - estimated from callsign/heading';
+      } else {
+        tagEl.className = 'route-source-tag confirmed';
+        tagEl.innerText = route.source === 'hexdb' ? 'HEXDB' : 'CONFIRMED';
+        tagEl.title = `Route data from ${route.source}`;
+      }
     }
 
     function getSilhouetteType(typeCode) {
@@ -1363,18 +1522,8 @@
       requestAnimationFrame(drawRadarScope);
     }
 
-    window.addEventListener('load', () => {
-      canvas = document.getElementById('radarCanvas');
-      ctx = canvas.getContext('2d');
-
-      initMap();
-      resizeCanvas();
-      window.addEventListener('resize', resizeCanvas);
-      
-      requestAnimationFrame(drawRadarScope);
-      fetchLiveFlights();
-      setInterval(fetchLiveFlights, 12000);
-    });
+    document.getElementById('start-overlay').addEventListener('click', startFeed);
+    document.getElementById('start-overlay').addEventListener('touchstart', startFeed);
   </script>
 </body>
 </html>
