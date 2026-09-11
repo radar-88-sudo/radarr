@@ -540,7 +540,8 @@
       'LEMD': 'Madrid Barajas, Spain',
       'LIRF': 'Rome Fiumicino, Italy',
       'KJFK': 'New York JFK, USA',
-      'KLAX': 'Los Angeles International, USA'
+      'KLAX': 'Los Angeles International, USA',
+      'OMDB': 'Dubai International, UAE'
     };
 
     function calcDistanceNM(lat1, lon1, lat2, lon2) {
@@ -650,7 +651,7 @@
         keyboard: false,
         touchZoom: false,
         tap: false
-      }).setView([userConfig.lat, userConfig.lon], 10);
+      }).setView([userConfig.lat, userConfig.lon], 9);
 
       map.dragging.disable();
       map.touchZoom.disable();
@@ -674,10 +675,10 @@
         radius: radiusMeters
       }).addTo(map);
 
-      map.fitBounds(radarCircle.getBounds(), { padding: [0, 0] });
-      const lockedZoom = map.getZoom() + 1;
-      map.setView([userConfig.lat, userConfig.lon], lockedZoom);
+      // Fit map precisely to radar bounds without over-zooming
+      map.fitBounds(radarCircle.getBounds(), { padding: [20, 20] });
       
+      const lockedZoom = map.getZoom();
       map.setMinZoom(lockedZoom);
       map.setMaxZoom(lockedZoom);
       map.setMaxBounds(radarCircle.getBounds());
@@ -695,11 +696,9 @@
         map.setMinZoom(0);
         map.setMaxZoom(18);
         map.invalidateSize();
-        map.fitBounds(radarCircle.getBounds(), { padding: [0, 0] });
+        map.fitBounds(radarCircle.getBounds(), { padding: [20, 20] });
         
-        const newZoom = map.getZoom() + 1;
-        map.setView([userConfig.lat, userConfig.lon], newZoom);
-        
+        const newZoom = map.getZoom();
         map.setMinZoom(newZoom);
         map.setMaxZoom(newZoom);
         map.setMaxBounds(radarCircle.getBounds());
@@ -840,40 +839,51 @@
 
     function resolveFlightRoute(flightStr, ac) {
       const callsign = (flightStr || '').toUpperCase().trim();
+      const heading = ac.track !== undefined ? ac.track : 0;
       
       // Military routing logic
       if (isMilitary(ac)) {
         if (callsign.startsWith('RRR') || callsign.startsWith('ASCOT')) {
           return { fromCode: 'EGVN', toCode: 'EGUN' }; // Brize Norton <-> Mildenhall
-        } else if (callsign.startsWith('SHF')) {
-          return { fromCode: 'EGHH', toCode: 'EGXC' };
+        } else if (callsign.startsWith('SHF') || callsign.startsWith('VORTEX')) {
+          return { fromCode: 'EGXC', toCode: 'EGVN' }; // Coningsby <-> Brize Norton
         } else if (callsign.startsWith('RCH') || callsign.startsWith('REACH')) {
           return { fromCode: 'ETAR', toCode: 'EGUN' }; // Ramstein <-> Mildenhall
+        } else if (callsign.startsWith('DUKE') || callsign.startsWith('BOOM')) {
+          return { fromCode: 'EGVA', toCode: 'EGUN' };
         }
-        return { fromCode: 'EGVN', toCode: 'EGVA' }; // Default UK military route
+        return { fromCode: 'EGVN', toCode: 'EGXC' };
       }
 
-      // Civil airline prefix routing logic
+      // Major airline prefix routing logic
       if (callsign.startsWith('BAW') || callsign.startsWith('BA')) {
-        return { fromCode: 'EGLL', toCode: 'EDDF' };
+        return { fromCode: 'EGLL', toCode: heading > 180 ? 'EDDF' : 'KJFK' };
       } else if (callsign.startsWith('RYR') || callsign.startsWith('FR')) {
         return { fromCode: 'EIDW', toCode: 'EGSS' };
       } else if (callsign.startsWith('EZY') || callsign.startsWith('U2')) {
         return { fromCode: 'EGKK', toCode: 'LFPG' };
       } else if (callsign.startsWith('KLM') || callsign.startsWith('KL')) {
-        return { fromCode: 'EHAM', toCode: 'EGPH' };
+        return { fromCode: 'EHAM', toCode: 'EGBB' };
       } else if (callsign.startsWith('DLH') || callsign.startsWith('LH')) {
-        return { fromCode: 'EDDF', toCode: 'EGLL' };
+        return { fromCode: 'EDDF', toCode: 'EGCC' };
       } else if (callsign.startsWith('AFR') || callsign.startsWith('AF')) {
-        return { fromCode: 'LFPG', toCode: 'EGCC' };
+        return { fromCode: 'LFPG', toCode: 'EGPH' };
       } else if (callsign.startsWith('VIR') || callsign.startsWith('VS')) {
-        return { fromCode: 'EGLL', toCode: 'KJFK' };
+        return { fromCode: 'EGLL', toCode: 'KLAX' };
+      } else if (callsign.startsWith('OMA') || callsign.startsWith('ETD') || callsign.startsWith('QTR')) {
+        return { fromCode: 'OMDB', toCode: 'EGLL' };
       }
 
-      // Fallback intelligently derived from hex code hash
-      const keys = Object.keys(airportDatabase);
-      const hash = parseInt(ac.hex, 16) || 12345;
-      return { fromCode: keys[hash % keys.length], toCode: keys[(hash + 3) % keys.length] };
+      // Intelligent directional routing based on actual compass heading (UK airspace context)
+      if (heading >= 315 || heading < 45) {
+        return { fromCode: 'EGNX', toCode: 'EGPH' }; // Northbound
+      } else if (heading >= 45 && heading < 135) {
+        return { fromCode: 'EGCC', toCode: 'EHAM' }; // Eastbound to Europe
+      } else if (heading >= 135 && heading < 225) {
+        return { fromCode: 'EGPH', toCode: 'EGLL' }; // Southbound to London
+      } else {
+        return { fromCode: 'EHAM', toCode: 'EIDW' }; // Westbound
+      }
     }
 
     function updateNearestScrollboard(acList) {
