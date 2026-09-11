@@ -275,6 +275,52 @@
       display: block;
     }
 
+    /* Container holding the airline logo badge + aircraft photo side by side inside
+       .logo-container. Replaces the old single-image layout so both can show at once. */
+    .photo-row {
+      display: flex;
+      align-items: center;
+      height: 100%;
+      width: 100%;
+    }
+
+    .airline-logo-thumb {
+      flex: 0 0 auto;
+      height: 65%;
+      max-width: 42%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 0.4rem;
+      border-right: 1px solid rgba(15, 56, 31, 0.6);
+    }
+
+    .airline-logo-thumb img {
+      max-height: 100%;
+      max-width: 100%;
+      object-fit: contain;
+      display: block;
+    }
+
+    .aircraft-photo-thumb {
+      flex: 1 1 auto;
+      height: 100%;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      padding: 0 0.3rem;
+    }
+
+    .aircraft-photo-thumb img {
+      height: 100%;
+      width: auto;
+      max-width: 100%;
+      object-fit: contain;
+      display: block;
+    }
+
     .logo-fallback {
       font-size: 0.65rem;
       font-weight: bold;
@@ -1116,41 +1162,58 @@
       return photoUrl;
     }
 
-    async function fetchAircraftPhoto(ac, isMil) {
-      const logoBox = document.getElementById('sb-logo-box');
-      if (isMil) {
-        logoBox.innerHTML = `<span class="logo-fallback" style="color: var(--accent-military);">MILITARY</span>`;
-      } else {
-        logoBox.innerHTML = `<span class="logo-fallback" id="sb-logo-text">--</span>`;
-      }
+    // ---------------------------------------------------------------------
+    // Airline logo lookup: derived from the callsign's 3-letter ICAO airline prefix
+    // (e.g. "RYR123" -> "RYR" -> Ryanair). Logos are pulled from the Jxck-S/airline-logos
+    // GitHub repo (raw file hosting - each source folder keys its images by ICAO code,
+    // e.g. custom_logos/RYR.png). The repo doesn't publish a single pre-merged folder -
+    // that only exists as the local output of its combine.sh script - so this mirrors that
+    // script's own precedence order (custom_logos, then flightaware_logos, then
+    // radarbox_logos) by trying each source in turn and keeping the first that loads.
+    // Falls back to airhex's free small-logo endpoint for anything none of the three have.
+    // Cached per ICAO code so a repeat lock on the same airline doesn't re-probe every poll.
+    // ---------------------------------------------------------------------
+    const airlineLogoCache = {}; // icaoCode -> url string, or null for known-empty (no source has it)
 
-      const photoUrl = await resolveAircraftPhoto(ac);
-
-      if (photoUrl) {
-        logoBox.innerHTML = `<img src="${photoUrl}" alt="Aircraft Photo">`;
-      } else if (isMil) {
-        logoBox.innerHTML = `<span class="logo-fallback" style="color: var(--accent-military);">MIL AC</span>`;
-      } else {
-        logoBox.innerHTML = `<span class="logo-fallback">${ac.t || 'CIVIL'}</span>`;
-      }
+    function extractAirlineIcaoCode(flightStr) {
+      if (!flightStr) return null;
+      const cs = flightStr.trim().toUpperCase();
+      // Standard ICAO callsigns are a 3-letter airline code followed by a flight number,
+      // e.g. RYR123, BAW45A. Bare registrations (G-VBZZ) and tactical callsigns
+      // ("LEADER 4") won't match this and correctly resolve to null.
+      const match = cs.match(/^([A-Z]{3})\d/);
+      return match ? match[1] : null;
     }
 
-    async function fetchCardPhoto(ac, thumbId) {
-      const thumbEl = document.getElementById(thumbId);
-      if (!thumbEl) return;
+    const AIRLINE_LOGOS_REPO_BASE = 'https://raw.githubusercontent.com/Jxck-S/airline-logos/main';
+    const airlineLogoRepoFolders = ['custom_logos', 'flightaware_logos', 'radarbox_logos'];
 
-      const photoUrl = await resolveAircraftPhoto(ac);
+    function airhexLogoUrl(icaoCode) {
+      return `https://content.airhex.com/content/logos/airlines_${icaoCode}_50_50_s.png?proportions=keep`;
+    }
 
-      // The card (and its id) may have been re-rendered away while the fetch was in flight
-      // (e.g. next poll cycle) - re-grab it rather than trust the closed-over reference.
-      const liveEl = document.getElementById(thumbId);
-      if (!liveEl) return;
+    // Resolves via <img> load/error rather than fetch(), since raw.githubusercontent.com
+    // doesn't need to be readable by JS - just displayable - and this sidesteps any CORS
+    // fuss entirely.
+    function probeImageUrl(url) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve(url);
+        img.onerror = () => resolve(null);
+        img.src = url;
+      });
+    }
 
-      if (photoUrl) {
-        liveEl.innerHTML = `<img src="${photoUrl}" alt="Military Aircraft Photo">`;
-      } else {
-        liveEl.innerHTML = `<span style="font-size:0.55rem; color:var(--accent-military); font-weight:bold; text-align:center;">MIL</span>`;
+    async function resolveAirlineLogoUrl(icaoCode) {
+      for (const folder of airlineLogoRepoFolders) {
+        const url = `${AIRLINE_LOGOS_REPO_BASE}/${folder}/${icaoCode}.png`;
+        const ok = await probeImageUrl(url);
+        if (ok) return ok;
       }
+      // None of the three repo sources have this ICAO code - fall back to airhex.
+      const airhexUrl = airhexLogoUrl(icaoCode);
+      const ok = await probeImageUrl(airhexUrl);
+      return ok || null;
     }
 
     function initMap() {
@@ -1377,6 +1440,24 @@
       internalScrollPos = gridEl.scrollTop;
     }
 
+    async function fetchCardPhoto(ac, thumbId) {
+      const thumbEl = document.getElementById(thumbId);
+      if (!thumbEl) return;
+
+      const photoUrl = await resolveAircraftPhoto(ac);
+
+      // The card (and its id) may have been re-rendered away while the fetch was in flight
+      // (e.g. next poll cycle) - re-grab it rather than trust the closed-over reference.
+      const liveEl = document.getElementById(thumbId);
+      if (!liveEl) return;
+
+      if (photoUrl) {
+        liveEl.innerHTML = `<img src="${photoUrl}" alt="Military Aircraft Photo">`;
+      } else {
+        liveEl.innerHTML = `<span style="font-size:0.55rem; color:var(--accent-military); font-weight:bold; text-align:center;">MIL</span>`;
+      }
+    }
+
     function processAutoScroll() {
       const grid = document.getElementById('aircraft-grid');
       if (!grid) return;
@@ -1416,6 +1497,67 @@
         scrollTimer = 120;
         internalScrollPos = maxScroll;
         grid.scrollTop = maxScroll;
+      }
+    }
+
+    async function fetchAircraftPhoto(ac, isMil) {
+      const logoBox = document.getElementById('sb-logo-box');
+
+      // Build the two-slot layout up front (airline badge + aircraft photo) so both can
+      // populate independently and asynchronously without clobbering each other.
+      logoBox.innerHTML = `
+        <div class="photo-row">
+          <div class="airline-logo-thumb" id="sb-airline-logo" style="display:none;"></div>
+          <div class="aircraft-photo-thumb" id="sb-aircraft-photo">
+            <span class="logo-fallback" id="sb-logo-text">${isMil ? 'MILITARY' : '--'}</span>
+          </div>
+        </div>
+      `;
+
+      // Airline logo - civil flights only, derived from the callsign's ICAO airline prefix.
+      if (!isMil) {
+        const callsign = ac.flight ? ac.flight.trim() : '';
+        const icaoCode = extractAirlineIcaoCode(callsign);
+        if (icaoCode) {
+          if (airlineLogoCache[icaoCode] === undefined) {
+            // Not resolved yet this session - probe the repo sources (then airhex) in the
+            // background and populate once we know. Mark as "in flight" so a rapid string
+            // of polls for the same airline doesn't kick off duplicate probes.
+            airlineLogoCache[icaoCode] = null;
+            resolveAirlineLogoUrl(icaoCode).then((url) => {
+              airlineLogoCache[icaoCode] = url;
+              // Only touch the DOM if the scrollboard is still locked on this same airline -
+              // otherwise this stale resolution would clobber whatever's shown now.
+              const stillRelevant = lockedAircraft && !isMilitary(lockedAircraft) &&
+                extractAirlineIcaoCode(lockedAircraft.flight ? lockedAircraft.flight.trim() : '') === icaoCode;
+              if (url && stillRelevant) {
+                const liveLogoEl = document.getElementById('sb-airline-logo');
+                if (liveLogoEl) {
+                  liveLogoEl.innerHTML = `<img src="${url}" alt="${icaoCode} logo">`;
+                  liveLogoEl.style.display = 'flex';
+                }
+              }
+            });
+          } else if (airlineLogoCache[icaoCode]) {
+            const logoEl = document.getElementById('sb-airline-logo');
+            if (logoEl) {
+              logoEl.innerHTML = `<img src="${airlineLogoCache[icaoCode]}" alt="${icaoCode} logo">`;
+              logoEl.style.display = 'flex';
+            }
+          }
+        }
+      }
+
+      const photoUrl = await resolveAircraftPhoto(ac);
+      const photoEl = document.getElementById('sb-aircraft-photo');
+      if (!photoEl) return; // scrollboard may have re-rendered away while the fetch was in flight
+
+      if (photoUrl) {
+        photoEl.innerHTML = `<img src="${photoUrl}" alt="Aircraft Photo">`;
+      } else if (isMil) {
+        photoEl.innerHTML = `<span class="logo-fallback" style="color: var(--accent-military);">MIL AC</span>`;
+      } else {
+        photoEl.innerHTML = `<span class="logo-fallback">${ac.t || 'CIVIL'}</span>`;
       }
     }
 
