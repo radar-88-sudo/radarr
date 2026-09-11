@@ -75,10 +75,10 @@
 
     main {
       flex: 1;
-      padding: 0.4rem;
+      padding: 0.3rem;
       display: grid;
       grid-template-columns: 1fr 340px;
-      gap: 0.4rem;
+      gap: 0.3rem;
       width: 100%;
       min-height: 0;
     }
@@ -102,8 +102,7 @@
       width: 100%;
       height: 100%;
       z-index: 1;
-      /* Dark tactical filter to reduce map visual clutter */
-      filter: brightness(0.4) contrast(1.8) saturate(0.1) hue-rotate(160deg) invert(0.9);
+      filter: brightness(0.35) contrast(1.9) saturate(0.1) hue-rotate(160deg) invert(0.9);
       opacity: 0.3;
       pointer-events: none;
     }
@@ -191,7 +190,7 @@
       height: 110px;
       background: rgba(2, 10, 5, 0.98);
       border-top: 1px solid var(--card-border);
-      padding: 0.35rem 0.4rem;
+      padding: 0.3rem 0.4rem;
       display: flex;
       align-items: center;
       z-index: 1000;
@@ -612,7 +611,7 @@
         keyboard: false,
         touchZoom: false,
         tap: false
-      }).setView([userConfig.lat, userConfig.lon], 9);
+      }).setView([userConfig.lat, userConfig.lon], 10);
 
       map.dragging.disable();
       map.touchZoom.disable();
@@ -636,9 +635,9 @@
         radius: radiusMeters
       }).addTo(map);
 
-      // Snug fit strictly to the 50 NM radar circle bounds with zero extra padding
+      // Maximize zoom tightly to the circle bounds with zero padding
       map.fitBounds(radarCircle.getBounds(), { padding: [0, 0] });
-      const lockedZoom = map.getZoom();
+      const lockedZoom = map.getZoom() + 1; // Slight additional zoom boost to fill container fully without overflow
       map.setView([userConfig.lat, userConfig.lon], lockedZoom);
       
       map.setMinZoom(lockedZoom);
@@ -660,7 +659,7 @@
         map.invalidateSize();
         map.fitBounds(radarCircle.getBounds(), { padding: [0, 0] });
         
-        const newZoom = map.getZoom();
+        const newZoom = map.getZoom() + 1;
         map.setView([userConfig.lat, userConfig.lon], newZoom);
         
         map.setMinZoom(newZoom);
@@ -729,17 +728,14 @@
       const flight = (ac.flight || '').toUpperCase();
       const reg = (ac.r || '').toUpperCase();
 
-      // 1. Explicitly block civilian registration prefixes (e.g. UK 'G-' civil registry)
       if (reg.startsWith('G-')) return false;
 
-      // 2. Explicitly exclude common civilian aircraft/helicopters prone to incorrect database flags
       const civilExclusions = [
         'MM16', 'B407', 'R22', 'R44', 'AS35', 'EC35', 'EC45', 'H125', 'H135', 
         'B206', 'C172', 'PA28', 'SR20', 'SR22', 'C152', 'DA40', 'DA42', 'AS50'
       ];
       if (civilExclusions.some(ex => type.includes(ex))) return false;
 
-      // 3. Strict military type check
       const milTypes = [
         'F16', 'F15', 'F18', 'F35', 'F22', 'EF20', 'EUFI', 'TYPH', 'TOR', 
         'HAWK', 'A10', 'C130', 'C17', 'A400', 'K35R', 'E3TF', 'V22', 'CH47', 
@@ -750,11 +746,9 @@
         return type.includes(s);
       })) return true;
 
-      // 4. Military callsign prefix check
       const milPrefixes = ['RRR', 'ASCOT', 'SHF', 'VORTEX', 'RCH', 'DUKE', 'BOOM', 'REACH', 'CNV', 'GUN', 'VIPER'];
       if (milPrefixes.some(prefix => flight.startsWith(prefix))) return true;
 
-      // 5. Upstream database flags (gated so it won't override known civil prefixes)
       const dbFlags = ac.dbFlags !== undefined ? ac.dbFlags : (ac.db_flags !== undefined ? ac.db_flags : 0);
       if (dbFlags & 1) {
         if (reg.startsWith('G-') || reg.startsWith('N')) return false;
