@@ -496,7 +496,7 @@
           onerror="document.getElementById('connection-status').innerText='LEAFLET FAILED TO LOAD - CHECK NETWORK'; document.getElementById('connection-status').style.color='#ff3333';"></script>
 
   <script>
-    const userConfig = { lat: 52.9529, lon: -0.9547, radiusNM: 35 };
+    const userConfig = { lat: 52.9529, lon: -0.9547, radiusNM: 250 };
     let map = null;
     let canvas = null;
     let ctx = null;
@@ -511,6 +511,7 @@
     let audioAlertsEnabled = true;
     const pulsed35Hexes = new Set();
     const pulsed5Hexes = new Set();
+    const announcedEmergencyHexes = new Set();
     let audioCtx = null;
     let feedStarted = false;
 
@@ -908,9 +909,17 @@
       return Math.round((brng + 360) % 360);
     }
 
+    const EMERGENCY_SQUAWKS = ['7500', '7600', '7700'];
+    const EMERGENCY_LOCK_RADIUS_NM = 250;
+
+    function isEmergencySquawk(ac) {
+      return EMERGENCY_SQUAWKS.includes(ac.squawk);
+    }
+
     // The only place a route (From/To) is ever displayed is the scrollboard, locked onto
-    // whichever aircraft is nearest. Route lookups should only ever target that one aircraft -
-    // never the whole liveAircraft list, or we flood adsbdb/hexdb with lookups nobody sees.
+    // whichever aircraft is selected below. Route lookups should only ever target that one
+    // aircraft - never the whole liveAircraft list, or we flood adsbdb/hexdb with lookups
+    // nobody sees.
     function findNearestAircraft(acList) {
       const validAc = (acList || []).filter(a => a.lat && a.lon);
       if (validAc.length === 0) return null;
@@ -918,6 +927,30 @@
         calcDistanceNM(userConfig.lat, userConfig.lon, a.lat, a.lon) -
         calcDistanceNM(userConfig.lat, userConfig.lon, b.lat, b.lon)
       )[0];
+    }
+
+    // Squawking 7500 (hijack), 7600 (radio failure), or 7700 (general emergency) takes
+    // priority for the scrollboard lock over plain proximity: if any such aircraft is within
+    // EMERGENCY_LOCK_RADIUS_NM, it's shown instead of whichever aircraft is nearest. With
+    // multiple simultaneous emergencies, the closest one wins. Falls back to nearest-aircraft
+    // when there's no emergency in range.
+    function findScrollboardTarget(acList) {
+      const validAc = (acList || []).filter(a => a.lat && a.lon);
+      if (validAc.length === 0) return null;
+
+      const emergencyAc = validAc.filter(a =>
+        isEmergencySquawk(a) &&
+        calcDistanceNM(userConfig.lat, userConfig.lon, a.lat, a.lon) <= EMERGENCY_LOCK_RADIUS_NM
+      );
+
+      if (emergencyAc.length > 0) {
+        return [...emergencyAc].sort((a, b) =>
+          calcDistanceNM(userConfig.lat, userConfig.lon, a.lat, a.lon) -
+          calcDistanceNM(userConfig.lat, userConfig.lon, b.lat, b.lon)
+        )[0];
+      }
+
+      return findNearestAircraft(validAc);
     }
 
     // Shared photo lookup with a simple cache, used by both the scrollboard and the
@@ -1083,10 +1116,11 @@
                 }
               });
 
-              // Route lookups only matter for the scrollboard's locked (nearest) aircraft -
+              // Route lookups only matter for whichever aircraft the scrollboard is locked
+              // onto (an in-range emergency squawk, or otherwise the nearest aircraft) -
               // resolving the whole liveAircraft list every poll needlessly floods adsbdb/hexdb.
-              const nearest = findNearestAircraft(liveAircraft);
-              if (nearest) await fetchRoutesForAircraft([nearest]);
+              const scrollboardTarget = findScrollboardTarget(liveAircraft);
+              if (scrollboardTarget) await fetchRoutesForAircraft([scrollboardTarget]);
 
               updateUIState(true);
               success = true;
@@ -1253,12 +1287,22 @@
 
     function updateNearestScrollboard(acList) {
       if (!acList || acList.length === 0) return;
-      lockedAircraft = findNearestAircraft(acList);
+      lockedAircraft = findScrollboardTarget(acList);
       if (!lockedAircraft) return;
 
       const dist = calcDistanceNM(userConfig.lat, userConfig.lon, lockedAircraft.lat, lockedAircraft.lon);
       const bearing = calcBearing(userConfig.lat, userConfig.lon, lockedAircraft.lat, lockedAircraft.lon);
       const flightStr = lockedAircraft.flight ? lockedAircraft.flight.trim() : `ICAO: ${lockedAircraft.hex}`;
+      const isEmergencyLock = isEmergencySquawk(lockedAircraft);
+
+      // Sound/flash once per aircraft the first time it takes an emergency lock, not on
+      // every 12s poll while it's still squawking - otherwise this fires continuously for
+      // as long as the emergency lasts.
+      if (isEmergencyLock && !announcedEmergencyHexes.has(lockedAircraft.hex)) {
+        announcedEmergencyHexes.add(lockedAircraft.hex);
+        playAlertTone();
+        triggerRedPulse();
+      }
 
       fetchAircraftPhoto(lockedAircraft, isMilitary(lockedAircraft));
 
@@ -1268,7 +1312,14 @@
       document.getElementById('sb-distance').innerText = `${dist.toFixed(1)} NM`;
       document.getElementById('sb-alt').innerText = `Alt: ${lockedAircraft.alt_baro || 'Ground'} ft`;
       document.getElementById('sb-speed').innerText = `Spd: ${speedKts} kts (${speedMph} mph)`;
-      document.getElementById('sb-airline').innerText = flightStr;
+
+      const airlineEl = document.getElementById('sb-airline');
+      airlineEl.innerText = isEmergencyLock ? `⚠ EMERGENCY — ${flightStr}` : flightStr;
+      airlineEl.style.color = isEmergencyLock ? 'var(--accent-red)' : 'var(--accent-green)';
+      airlineEl.style.textShadow = isEmergencyLock
+        ? '0 0 10px rgba(255,51,51,0.6)'
+        : '0 0 8px rgba(0,255,102,0.4)';
+
       document.getElementById('sb-type').innerText = `Type: ${lockedAircraft.t || 'Aircraft'}`;
 
       const heading = lockedAircraft.track !== undefined ? Math.round(lockedAircraft.track) : '--';
