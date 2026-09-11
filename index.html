@@ -634,7 +634,7 @@
       const dist = calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon);
       let triggeredPulse = false;
 
-      if (dist <= 13.0 && !pulsed5Hexes.has(ac.hex)) {
+      if (dist <= 200 && !pulsed5Hexes.has(ac.hex)) {
         pulsed5Hexes.add(ac.hex);
         pulsed35Hexes.add(ac.hex);
         triggeredPulse = true;
