@@ -187,7 +187,7 @@
     }
 
     footer {
-      height: 112px;
+      height: 120px;
       background: rgba(2, 10, 5, 0.98);
       border-top: 1px solid var(--card-border);
       padding: 0.4rem 0.5rem;
@@ -204,7 +204,7 @@
       border: 1px solid var(--card-border);
       border-radius: 8px;
       display: grid;
-      grid-template-columns: 120px 1.3fr 1.1fr 1fr;
+      grid-template-columns: 110px 1.1fr 1.2fr 1fr 1fr;
       align-items: center;
       overflow: hidden;
       box-shadow: 0 0 15px rgba(0, 0, 0, 0.8);
@@ -238,7 +238,7 @@
     }
 
     .banner-col {
-      padding: 0.4rem 0.75rem;
+      padding: 0.35rem 0.6rem;
       display: flex;
       flex-direction: column;
       justify-content: center;
@@ -251,34 +251,34 @@
     }
 
     .airline-heading {
-      font-size: 1.15rem;
+      font-size: 1.1rem;
       font-weight: 800;
       color: var(--accent-green);
       letter-spacing: 0.02em;
       line-height: 1.1;
-      margin-bottom: 0.1rem;
+      margin-bottom: 0.05rem;
       text-shadow: 0 0 8px rgba(0, 255, 102, 0.4);
     }
 
     .aircraft-meta {
-      font-size: 0.75rem;
+      font-size: 0.72rem;
       color: var(--text-dim);
       font-weight: 500;
-      margin-bottom: 0.2rem;
+      margin-bottom: 0.15rem;
     }
 
     .route-container {
       display: flex;
       flex-direction: column;
-      gap: 0.1rem;
-      font-size: 0.8rem;
+      gap: 0.05rem;
+      font-size: 0.75rem;
       font-weight: 600;
     }
 
     .route-row {
       display: flex;
       align-items: center;
-      gap: 0.4rem;
+      gap: 0.3rem;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -286,9 +286,9 @@
 
     .route-label {
       color: var(--text-dim);
-      font-size: 0.68rem;
+      font-size: 0.65rem;
       text-transform: uppercase;
-      width: 32px;
+      width: 28px;
       flex-shrink: 0;
     }
 
@@ -296,11 +296,11 @@
       display: flex;
       flex-direction: column;
       justify-content: center;
-      gap: 0.1rem;
+      gap: 0.05rem;
     }
 
     .primary-metric {
-      font-size: 1.25rem;
+      font-size: 1.15rem;
       font-weight: 800;
       color: var(--accent-green);
       line-height: 1.1;
@@ -308,13 +308,13 @@
     }
 
     .secondary-metric {
-      font-size: 0.85rem;
+      font-size: 0.8rem;
       font-weight: 600;
       color: var(--text-main);
     }
 
     .sub-title {
-      font-size: 0.65rem;
+      font-size: 0.62rem;
       font-weight: 700;
       color: var(--text-dim);
       text-transform: uppercase;
@@ -353,10 +353,12 @@
 
   <footer>
     <div class="scrollboard">
+      <!-- Col 1: Photo / Logo -->
       <div class="logo-container" id="sb-logo-box">
         <span class="logo-fallback" id="sb-logo-text">--</span>
       </div>
 
+      <!-- Col 2: Ident & Routing -->
       <div class="banner-col">
         <div id="sb-airline" class="airline-heading">AWAITING LOCK</div>
         <div id="sb-type" class="aircraft-meta">Type: --</div>
@@ -372,17 +374,28 @@
         </div>
       </div>
 
+      <!-- Col 3: Distance & Kinematics -->
       <div class="banner-col metric-group">
-        <div class="sub-title">Distance From You</div>
+        <div class="sub-title">Range & Kinematics</div>
         <div id="sb-distance" class="primary-metric">-- NM</div>
-        <div id="sb-alt" class="secondary-metric">Altitude: -- ft</div>
-        <div id="sb-speed" class="secondary-metric">Speed: -- kts</div>
+        <div id="sb-alt" class="secondary-metric">Alt: -- ft</div>
+        <div id="sb-speed" class="secondary-metric">Spd: -- kts</div>
       </div>
 
+      <!-- Col 4: Vector & Vertical Rate -->
       <div class="banner-col metric-group">
+        <div class="sub-title">Vector & V/S</div>
         <div id="sb-rate" class="secondary-metric" style="font-weight: 700;">Rate: --</div>
-        <div id="sb-heading" class="secondary-metric" style="font-size:0.8rem; color:var(--text-dim);">Heading: --°</div>
-        <div id="sb-squawk" class="secondary-metric" style="font-size:0.75rem; color:var(--text-dim);">Squawk: -- | Hex: --</div>
+        <div id="sb-heading" class="secondary-metric">Hdng: --°</div>
+        <div id="sb-bearing" class="secondary-metric" style="font-size:0.75rem; color:var(--text-dim);">Bearing: --°</div>
+      </div>
+
+      <!-- Col 5: Transponder & Hex ID -->
+      <div class="banner-col metric-group">
+        <div class="sub-title">Transponder ID</div>
+        <div id="sb-squawk" class="secondary-metric" style="font-weight:700;">Squawk: ----</div>
+        <div id="sb-hex" class="secondary-metric" style="font-size:0.75rem; color:var(--text-dim);">Hex: --</div>
+        <div id="sb-reg" class="secondary-metric" style="font-size:0.75rem; color:var(--accent-military);">Reg: --</div>
       </div>
     </div>
   </footer>
@@ -532,6 +545,15 @@
                 Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
                 Math.sin(dLon / 2) * Math.sin(dLon / 2);
       return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    function calcBearing(lat1, lon1, lat2, lon2) {
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const y = Math.sin(dLon) * Math.cos(lat2 * Math.PI / 180);
+      const x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180) -
+                Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos(dLon);
+      let brng = Math.atan2(y, x) * 180 / Math.PI;
+      return Math.round((brng + 360) % 360);
     }
 
     async function fetchAircraftPhoto(ac, icaoCode, isMil) {
@@ -766,27 +788,37 @@
       )[0];
 
       const dist = calcDistanceNM(userConfig.lat, userConfig.lon, lockedAircraft.lat, lockedAircraft.lon);
+      const bearing = calcBearing(userConfig.lat, userConfig.lon, lockedAircraft.lat, lockedAircraft.lon);
       const flightStr = lockedAircraft.flight ? lockedAircraft.flight.trim() : `ICAO: ${lockedAircraft.hex}`;
       const icaoCode = flightStr.length >= 3 ? flightStr.substring(0, 3).toUpperCase() : '';
 
       fetchAircraftPhoto(lockedAircraft, icaoCode, isMilitary(lockedAircraft));
 
       document.getElementById('sb-distance').innerText = `${dist.toFixed(1)} NM`;
-      document.getElementById('sb-alt').innerText = `Altitude: ${lockedAircraft.alt_baro || 'Ground'} ft`;
-      document.getElementById('sb-speed').innerText = `Speed: ${lockedAircraft.gs || 0} kts`;
+      document.getElementById('sb-alt').innerText = `Alt: ${lockedAircraft.alt_baro || 'Ground'} ft`;
+      document.getElementById('sb-speed').innerText = `Spd: ${lockedAircraft.gs || 0} kts`;
       document.getElementById('sb-airline').innerText = flightStr;
       document.getElementById('sb-type').innerText = `Type: ${lockedAircraft.t || 'Aircraft'}`;
 
       const heading = lockedAircraft.track !== undefined ? Math.round(lockedAircraft.track) : '--';
-      document.getElementById('sb-heading').innerText = `Heading: ${heading}°`;
-      document.getElementById('sb-squawk').innerText = `Squawk: ${lockedAircraft.squawk || '----'} | Hex: ${lockedAircraft.hex || '--'}`;
+      document.getElementById('sb-heading').innerText = `Hdng: ${heading}°`;
+      document.getElementById('sb-bearing').innerText = `Bearing: ${bearing}°`;
+      
+      const squawkCode = lockedAircraft.squawk || '----';
+      let squawkDisplay = squawkCode;
+      if (squawkCode === '7700') squawkDisplay = '7700 (EMERGENCY)';
+      else if (squawkCode === '7600') squawkDisplay = '7600 (RADIO FAIL)';
+      else if (squawkCode === '7500') squawkDisplay = '7500 (HIJACK)';
+      document.getElementById('sb-squawk').innerText = `Squawk: ${squawkDisplay}`;
+      document.getElementById('sb-hex').innerText = `Hex: ${lockedAircraft.hex || '--'}`;
+      document.getElementById('sb-reg').innerText = `Reg: ${lockedAircraft.r || 'Unassigned'}`;
 
       const vertRate = lockedAircraft.baro_rate !== undefined ? lockedAircraft.baro_rate : 0;
       const rateEl = document.getElementById('sb-rate');
       if (vertRate > 30) {
-        rateEl.innerHTML = `<span style="color: var(--accent-green); text-shadow: 0 0 6px rgba(0,255,102,0.4);">▲ Climbing (+${vertRate} ft/min)</span>`;
+        rateEl.innerHTML = `<span style="color: var(--accent-green); text-shadow: 0 0 6px rgba(0,255,102,0.4);">▲ +${vertRate} ft/m</span>`;
       } else if (vertRate < -30) {
-        rateEl.innerHTML = `<span style="color: var(--accent-red); text-shadow: 0 0 6px rgba(255,51,51,0.4);">▼ Descending (${vertRate} ft/min)</span>`;
+        rateEl.innerHTML = `<span style="color: var(--accent-red); text-shadow: 0 0 6px rgba(255,51,51,0.4);">▼ ${vertRate} ft/m</span>`;
       } else {
         rateEl.innerHTML = `<span style="color: var(--text-dim);">— Level Flight</span>`;
       }
@@ -864,11 +896,9 @@
       const edgePt = map.latLngToContainerPoint([edgeLat, userConfig.lon]);
       const maxRadiusPx = Math.abs(edgePt.y - centerPt.y);
 
-      // Apply retro phosphor glow effect
       ctx.shadowColor = '#00ff66';
       ctx.shadowBlur = 8;
 
-      // Concentric range circles
       ctx.strokeStyle = 'rgba(0, 255, 102, 0.35)';
       ctx.lineWidth = 1;
       [0.25, 0.5, 0.75, 1.0].forEach((factor) => {
@@ -882,7 +912,6 @@
         ctx.fillText(`${(userConfig.radiusNM * factor).toFixed(0)} NM`, centerPt.x + 4, centerPt.y - r + 10);
       });
 
-      // Crosshairs
       ctx.beginPath();
       ctx.moveTo(centerPt.x - maxRadiusPx, centerPt.y);
       ctx.lineTo(centerPt.x + maxRadiusPx, centerPt.y);
@@ -891,7 +920,6 @@
       ctx.strokeStyle = 'rgba(0, 255, 102, 0.25)';
       ctx.stroke();
 
-      // Cardinal points
       ctx.fillStyle = '#00ff66';
       ctx.font = 'bold 11px system-ui';
       ctx.fillText('N', centerPt.x - 4, centerPt.y - maxRadiusPx - 5);
@@ -899,7 +927,6 @@
       ctx.fillText('E', centerPt.x + maxRadiusPx + 5, centerPt.y + 4);
       ctx.fillText('W', centerPt.x - maxRadiusPx - 18, centerPt.y + 4);
 
-      // Rotating radar sweep line with phosphor persistence trail
       sweepAngle += 0.015;
       for (let i = 0; i < 15; i++) {
         const trailAngle = sweepAngle - (i * 0.012);
@@ -914,7 +941,6 @@
         ctx.stroke();
       }
 
-      // Main sweep line
       const sweepX = centerPt.x + Math.cos(sweepAngle) * maxRadiusPx;
       const sweepY = centerPt.y + Math.sin(sweepAngle) * maxRadiusPx;
       ctx.beginPath();
@@ -924,7 +950,6 @@
       ctx.lineWidth = 2;
       ctx.stroke();
 
-      // Aircraft Trails
       Object.keys(aircraftTrails).forEach(hex => {
         const trail = aircraftTrails[hex];
         if (trail.length > 1) {
@@ -940,7 +965,6 @@
         }
       });
 
-      // Render Aircraft Targets
       if (liveAircraft && liveAircraft.length > 0) {
         liveAircraft.forEach(ac => {
           if (!ac.lat || !ac.lon) return;
@@ -963,7 +987,6 @@
             ctx.shadowBlur = 8;
           }
 
-          // Heading vector line
           if (ac.track !== undefined) {
             const trackRad = (ac.track - 90) * (Math.PI / 180);
             const lineLen = 22;
@@ -992,7 +1015,6 @@
           ctx.stroke();
           ctx.restore();
 
-          // Target Label
           ctx.fillStyle = isMil ? '#ffb000' : '#00ff66';
           ctx.font = 'bold 10px system-ui';
           const label = ac.flight ? ac.flight.trim() : ac.hex;
