@@ -590,57 +590,53 @@
       'OMDB': 'Dubai International, UAE'
     };
 
-    // Batch-resolve real routes for any aircraft whose callsign we haven't looked up yet.
-    // Cheap no-op once everything currently in view has been queried (cache hit or confirmed empty).
+    // Batch-resolve real routes for any aircraft whose callsign we haven't looked up yet,
+    // via adsbdb.com's free callsign->route lookup. No lat/lng needed - just the callsign.
+    // adsbdb has no batch endpoint, so we fire individual GETs with limited concurrency
+    // to stay well under its rate limit.
     async function fetchRoutesForAircraft(acList) {
       const toQuery = [];
       const seen = new Set();
 
       acList.forEach(ac => {
         const callsign = (ac.flight || '').trim().toUpperCase();
-        if (!callsign || !ac.lat || !ac.lon) return;
+        if (!callsign) return;
         if (routeCache[callsign] !== undefined) return; // already resolved or known-empty
         if (seen.has(callsign)) return;
         seen.add(callsign);
-        toQuery.push({ callsign, lat: ac.lat, lng: ac.lon });
+        toQuery.push(callsign);
       });
 
       if (toQuery.length === 0) return;
 
-      const CHUNK = 100;
-      for (let i = 0; i < toQuery.length; i += CHUNK) {
-        const chunk = toQuery.slice(i, i + CHUNK);
-        try {
-          const res = await fetch('https://api.adsb.lol/api/0/routeset', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ planes: chunk })
-          });
-          if (!res.ok) continue;
-          const data = await res.json();
-
-          (data || []).forEach(entry => {
-            const cs = (entry.callsign || '').toUpperCase().trim();
-            if (!cs) return;
-            const airports = entry._airports;
-            if (airports && airports.length >= 2) {
-              const from = airports[0];
-              const to = airports[airports.length - 1];
-              routeCache[cs] = {
-                fromCode: from.iata || from.icao,
-                toCode: to.iata || to.icao,
-                fromName: from.name + (from.location ? `, ${from.location}` : ''),
-                toName: to.name + (to.location ? `, ${to.location}` : '')
-              };
+      const CONCURRENCY = 5;
+      for (let i = 0; i < toQuery.length; i += CONCURRENCY) {
+        const batch = toQuery.slice(i, i + CONCURRENCY);
+        await Promise.all(batch.map(async callsign => {
+          try {
+            const res = await fetch(`https://api.adsbdb.com/v0/callsign/${encodeURIComponent(callsign)}`);
+            if (!res.ok) {
+              routeCache[callsign] = null;
+              return;
             }
-          });
-
-          // Anything in this chunk that still has no cache entry got no route match —
-          // mark as known-empty so we don't re-query it on every 12s poll.
-          chunk.forEach(p => {
-            if (routeCache[p.callsign] === undefined) routeCache[p.callsign] = null;
-          });
-        } catch (err) {}
+            const data = await res.json();
+            const route = data && data.response && data.response.flightroute;
+            if (route && route.origin && route.destination) {
+              const from = route.origin;
+              const to = route.destination;
+              routeCache[callsign] = {
+                fromCode: from.iata_code || from.icao_code,
+                toCode: to.iata_code || to.icao_code,
+                fromName: from.name + (from.municipality ? `, ${from.municipality}` : ''),
+                toName: to.name + (to.municipality ? `, ${to.municipality}` : '')
+              };
+            } else {
+              routeCache[callsign] = null; // known-empty, don't re-query every poll
+            }
+          } catch (err) {
+            routeCache[callsign] = null;
+          }
+        }));
       }
     }
 
