@@ -567,7 +567,10 @@
           const trackCardinal = getCardinalFromDeg(ac.track !== undefined ? ac.track : 0);
           const altText = ac.alt_baro ? `${Math.round(ac.alt_baro)} feet` : 'ground level';
           
-          const speechText = `Proximity alert. Military aircraft callsign ${callsign} is heading in from the ${posCardinal} and moving ${trackCardinal} at ${altText} altitude, ${dist.toFixed(1)} miles away.`;
+          const speedKts = ac.gs !== undefined ? Math.round(ac.gs) : 0;
+          const speedMph = Math.round(speedKts * 1.15078);
+          
+          const speechText = `Proximity alert. Military aircraft callsign ${callsign} is heading in from the ${posCardinal} and moving ${trackCardinal} at ${altText} altitude, travelling at ${speedKts} knots, or ${speedMph} miles per hour, ${dist.toFixed(1)} miles away.`;
           
           if ('speechSynthesis' in window) {
             const utterance = new SpeechSynthesisUtterance(speechText);
