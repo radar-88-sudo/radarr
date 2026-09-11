@@ -502,33 +502,6 @@
       } catch (e) {}
     }
 
-    function announceMilitaryAircraft(ac) {
-      if (!audioAlertsEnabled) return;
-      if (announcedMilHexes.has(ac.hex)) return;
-
-      announcedMilHexes.add(ac.hex);
-      playAlertTone(); // Always beep for ANY new military aircraft in the 35 NM range
-
-      // Check distance for voice announcement (only speak out if <= 5 NM away)
-      const dist = calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon);
-      if (dist <= 5.0) {
-        setTimeout(() => {
-          const modelName = getAircraftModelName(ac.t);
-          const country = getCountryFromHex(ac.hex);
-          const callsign = ac.flight ? ac.flight.trim() : 'Unknown callsign';
-          
-          const speechText = `Proximity alert. Military aircraft Callsign ${callsign} is ${dist.toFixed(1)} miles away. Model: ${modelName}, from ${country}.`;
-          
-          if ('speechSynthesis' in window) {
-            const utterance = new SpeechSynthesisUtterance(speechText);
-            utterance.rate = 1.0;
-            utterance.pitch = 1.0;
-            window.speechSynthesis.speak(utterance);
-          }
-        }, 350);
-      }
-    }
-
     const airportDatabase = {
       'EGLL': 'London Heathrow, UK',
       'EGKK': 'London Gatwick, UK',
@@ -545,6 +518,7 @@
       'EGVA': 'RAF Fairford, UK',
       'EGXC': 'RAF Coningsby, UK',
       'EGUL': 'RAF Lakenheath, UK',
+      'ETAR': 'Ramstein Air Base, Germany',
       'EHAM': 'Amsterdam Schiphol, Netherlands',
       'LFPG': 'Paris Charles de Gaulle, France',
       'EDDF': 'Frankfurt Airport, Germany',
@@ -555,6 +529,66 @@
       'KLAX': 'Los Angeles International, USA',
       'OMDB': 'Dubai International, UAE'
     };
+
+    function resolveFlightRoute(flightStr, ac) {
+      const callsign = (flightStr || '').toUpperCase().trim();
+      const heading = ac.track !== undefined ? ac.track : 0;
+      
+      if (isMilitary(ac)) {
+        if (callsign.startsWith('RRR') || callsign.startsWith('ASCOT')) {
+          return { fromCode: 'EGVN', toCode: 'EGUN' };
+        } else if (callsign.startsWith('SHF') || callsign.startsWith('VORTEX')) {
+          return { fromCode: 'EGXC', toCode: 'EGVN' };
+        } else if (callsign.startsWith('RCH') || callsign.startsWith('REACH')) {
+          return { fromCode: 'ETAR', toCode: 'EGUN' };
+        } else if (callsign.startsWith('DUKE') || callsign.startsWith('BOOM')) {
+          return { fromCode: 'EGVA', toCode: 'EGUN' };
+        }
+        return { fromCode: 'EGVN', toCode: 'EGXC' };
+      }
+
+      if (heading >= 315 || heading < 45) {
+        return { fromCode: 'EGNX', toCode: 'EGPH' };
+      } else if (heading >= 45 && heading < 135) {
+        return { fromCode: 'EGCC', toCode: 'EHAM' };
+      } else if (heading >= 135 && heading < 225) {
+        return { fromCode: 'EGPH', toCode: 'EGLL' };
+      } else {
+        return { fromCode: 'EHAM', toCode: 'EIDW' };
+      }
+    }
+
+    function announceMilitaryAircraft(ac) {
+      if (!audioAlertsEnabled) return;
+      if (announcedMilHexes.has(ac.hex)) return;
+
+      announcedMilHexes.add(ac.hex);
+      playAlertTone(); // Beeps immediately for ANY new military aircraft in the 35 NM range
+
+      // Check distance for voice announcement (only speaks if <= 5 NM away)
+      const dist = calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon);
+      if (dist <= 5.0) {
+        setTimeout(() => {
+          const modelName = getAircraftModelName(ac.t);
+          const country = getCountryFromHex(ac.hex);
+          const callsign = ac.flight ? ac.flight.trim() : 'Unknown callsign';
+          
+          // Resolve route headings/airports
+          const route = resolveFlightRoute(ac.flight, ac);
+          const fromLoc = airportDatabase[route.fromCode] || route.fromCode;
+          const toLoc = airportDatabase[route.toCode] || route.toCode;
+          
+          const speechText = `Proximity alert. Military aircraft Callsign ${callsign} is ${dist.toFixed(1)} miles away. Model: ${modelName}, from ${country}, heading from ${fromLoc} to ${toLoc}.`;
+          
+          if ('speechSynthesis' in window) {
+            const utterance = new SpeechSynthesisUtterance(speechText);
+            utterance.rate = 1.0;
+            utterance.pitch = 1.0;
+            window.speechSynthesis.speak(utterance);
+          }
+        }, 350);
+      }
+    }
 
     function calcDistanceNM(lat1, lon1, lat2, lon2) {
       const R = 3440.065;
@@ -914,52 +948,6 @@
         scrollTimer = 120;
         internalScrollPos = maxScroll;
         grid.scrollTop = maxScroll;
-      }
-    }
-
-    function resolveFlightRoute(flightStr, ac) {
-      const callsign = (flightStr || '').toUpperCase().trim();
-      const heading = ac.track !== undefined ? ac.track : 0;
-      
-      if (isMilitary(ac)) {
-        if (callsign.startsWith('RRR') || callsign.startsWith('ASCOT')) {
-          return { fromCode: 'EGVN', toCode: 'EGUN' };
-        } else if (callsign.startsWith('SHF') || callsign.startsWith('VORTEX')) {
-          return { fromCode: 'EGXC', toCode: 'EGVN' };
-        } else if (callsign.startsWith('RCH') || callsign.startsWith('REACH')) {
-          return { fromCode: 'ETAR', toCode: 'EGUN' };
-        } else if (callsign.startsWith('DUKE') || callsign.startsWith('BOOM')) {
-          return { fromCode: 'EGVA', toCode: 'EGUN' };
-        }
-        return { fromCode: 'EGVN', toCode: 'EGXC' };
-      }
-
-      if (callsign.startsWith('BAW') || callsign.startsWith('BA')) {
-        return { fromCode: 'EGLL', toCode: heading > 180 ? 'EDDF' : 'KJFK' };
-      } else if (callsign.startsWith('RYR') || callsign.startsWith('FR')) {
-        return { fromCode: 'EIDW', toCode: 'EGSS' };
-      } else if (callsign.startsWith('EZY') || callsign.startsWith('U2')) {
-        return { fromCode: 'EGKK', toCode: 'LFPG' };
-      } else if (callsign.startsWith('KLM') || callsign.startsWith('KL')) {
-        return { fromCode: 'EHAM', toCode: 'EGBB' };
-      } else if (callsign.startsWith('DLH') || callsign.startsWith('LH')) {
-        return { fromCode: 'EDDF', toCode: 'EGCC' };
-      } else if (callsign.startsWith('AFR') || callsign.startsWith('AF')) {
-        return { fromCode: 'LFPG', toCode: 'EGPH' };
-      } else if (callsign.startsWith('VIR') || callsign.startsWith('VS')) {
-        return { fromCode: 'EGLL', toCode: 'KLAX' };
-      } else if (callsign.startsWith('OMA') || callsign.startsWith('ETD') || callsign.startsWith('QTR')) {
-        return { fromCode: 'OMDB', toCode: 'EGLL' };
-      }
-
-      if (heading >= 315 || heading < 45) {
-        return { fromCode: 'EGNX', toCode: 'EGPH' };
-      } else if (heading >= 45 && heading < 135) {
-        return { fromCode: 'EGCC', toCode: 'EHAM' };
-      } else if (heading >= 135 && heading < 225) {
-        return { fromCode: 'EGPH', toCode: 'EGLL' };
-      } else {
-        return { fromCode: 'EHAM', toCode: 'EIDW' };
       }
     }
 
