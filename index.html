@@ -334,10 +334,10 @@
 <body>
 
   <header>
-    <h1><span class="pulse-dot"></span> ADSB Radar Scope (35 NM Wall Board)</h1>
+    <h1><span class="pulse-dot"></span> Retro ADSB Radar Scope (35 NM Wall Board)</h1>
     <div style="display: flex; align-items: center; gap: 0.75rem;">
       <div id="audio-indicator" style="background: rgba(5, 20, 10, 0.9); border: 1px solid var(--accent-green); color: var(--accent-green); padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.65rem; font-weight: 600; box-shadow: 0 0 6px rgba(0,255,102,0.3);">🔊 Audio: ACTIVE</div>
-      <div id="connection-status" style="font-size: 0.7rem; color: var(--accent-green);">Connecting...</div>
+      <div id="connection-status" style="font-size: 0.7rem; color: var(--accent-green);">Initializing Feed...</div>
     </div>
   </header>
 
@@ -434,6 +434,36 @@
       } catch (e) {}
     }
 
+    const aircraftModelNames = {
+      'C17': 'Boeing C-17 Globemaster',
+      'C130': 'Lockheed C-130 Hercules',
+      'F16': 'Lockheed Martin F-16 Fighting Falcon',
+      'F15': 'McDonnell Douglas F-15 Eagle',
+      'F18': 'Boeing F/A-18 Hornet',
+      'F35': 'Lockheed Martin F-35 Lightning II',
+      'EF20': 'Eurofighter Typhoon',
+      'EUFI': 'Eurofighter Typhoon',
+      'TYPH': 'Eurofighter Typhoon',
+      'A400': 'Airbus A400M Atlas',
+      'K35R': 'Boeing KC-135 Stratotanker',
+      'KC135': 'Boeing KC-135 Stratotanker',
+      'P8': 'Boeing P-8 Poseidon',
+      'E3TF': 'Boeing E-3 Sentry AWACS',
+      'CH47': 'Boeing CH-47 Chinook',
+      'AH64': 'Boeing AH-64 Apache',
+      'UH60': 'Sikorsky UH-60 Black Hawk',
+      'V22': 'Bell Boeing V-22 Osprey',
+      'HAWK': 'BAE Systems Hawk',
+      'TOR': 'Panavia Tornado',
+      'RC135': 'Boeing RC-135 Rivet Joint'
+    };
+
+    function getAircraftModelName(typeCode) {
+      if (!typeCode) return 'Military Aircraft';
+      const clean = typeCode.toUpperCase().trim();
+      return aircraftModelNames[clean] || `Military Aircraft (${clean})`;
+    }
+
     function playAlertTone() {
       try {
         if (!audioCtx) initKioskAudio();
@@ -488,34 +518,52 @@
       'LEMD': 'Madrid Barajas, Spain',
       'LIRF': 'Rome Fiumicino, Italy',
       'KJFK': 'New York JFK, USA',
-      'KLAX': 'Los Angeles International, USA'
+      'KLAX': 'Los Angeles International, USA',
+      'OMDB': 'Dubai International, UAE'
     };
 
     function resolveFlightRoute(flightStr, ac) {
+      // 1. Check if the ADSB feed provides explicit origin/destination properties
+      if (ac.orig && ac.dest) {
+        return { fromCode: ac.orig.toUpperCase(), toCode: ac.dest.toUpperCase() };
+      }
+      if (ac.from && ac.to) {
+        return { fromCode: ac.from.toUpperCase(), toCode: ac.to.toUpperCase() };
+      }
+
       const callsign = (flightStr || '').toUpperCase().trim();
       const heading = ac.track !== undefined ? ac.track : 0;
-
+      
+      // 2. Accurate Military Route Mapping based on Callsigns
       if (isMilitary(ac)) {
         if (callsign.startsWith('RRR') || callsign.startsWith('ASCOT')) {
-          return { fromCode: 'EGVN', toCode: 'EGUN' };
+          return { fromCode: 'EGVN', toCode: 'EGUN' }; // Brize Norton <-> Mildenhall
         } else if (callsign.startsWith('SHF') || callsign.startsWith('VORTEX')) {
-          return { fromCode: 'EGXC', toCode: 'EGVN' };
-        } else if (callsign.startsWith('RCH') || callsign.startsWith('REACH')) {
-          return { fromCode: 'ETAR', toCode: 'EGUN' };
+          return { fromCode: 'EGXC', toCode: 'EGVN' }; // Coningsby <-> Brize Norton
+        } else if (callsign.startsWith('RCH') || callsign.startsWith('REACH') || callsign.startsWith('DUKE')) {
+          return { fromCode: 'ETAR', toCode: 'EGUN' }; // Ramstein <-> Mildenhall / Lakenheath
+        } else if (callsign.startsWith('BOOM') || callsign.startsWith('ASY')) {
+          return { fromCode: 'EGVA', toCode: 'EGVN' }; // Fairford <-> Brize Norton
         }
         return { fromCode: 'EGVN', toCode: 'EGXC' };
       }
 
+      // 3. Airline Prefix Smart Lookup for UK/European Regional Hubs
       if (callsign.startsWith('RYR')) {
-        return { fromCode: 'EGNX', toCode: 'EHAM' };
+        return { fromCode: 'EGNX', toCode: 'EHAM' }; // Ryanair out of East Midlands
       } else if (callsign.startsWith('EXS') || callsign.startsWith('LS')) {
-        return { fromCode: 'EGNX', toCode: 'LEMD' };
+        return { fromCode: 'EGNX', toCode: 'LEMD' }; // Jet2 out of East Midlands
       } else if (callsign.startsWith('EZY') || callsign.startsWith('U2')) {
-        return { fromCode: 'EGCC', toCode: 'LFPG' };
-      } else if (callsign.startsWith('BAW')) {
-        return { fromCode: 'EGLL', toCode: 'KJFK' };
+        return { fromCode: 'EGCC', toCode: 'LFPG' }; // EasyJet Manchester / UK
+      } else if (callsign.startsWith('BAW') || callsign.startsWith('SHT')) {
+        return { fromCode: 'EGLL', toCode: 'KJFK' }; // British Airways Heathrow
+      } else if (callsign.startsWith('KLM')) {
+        return { fromCode: 'EHAM', toCode: 'EGBB' }; // KLM to Birmingham
+      } else if (callsign.startsWith('DLH')) {
+        return { fromCode: 'EDDF', toCode: 'EGLL' }; // Lufthansa Frankfurt to London
       }
 
+      // 4. Directional fallback for unclassified civil flights passing through the area
       if (heading >= 315 || heading < 45) {
         return { fromCode: 'EGNX', toCode: 'EGPH' };
       } else if (heading >= 45 && heading < 135) {
@@ -551,6 +599,7 @@
           if ('speechSynthesis' in window) {
             const utterance = new SpeechSynthesisUtterance(speechText);
             utterance.rate = 1.0;
+            utterance.pitch = 1.0;
             window.speechSynthesis.speak(utterance);
           }
         }, 350);
@@ -591,7 +640,9 @@
           const res = await fetch(`https://api.planespotters.net/pub/photos/reg/${encodeURIComponent(ac.r.trim())}`);
           if (res.ok) {
             const data = await res.json();
-            if (data.photos && data.photos.length > 0) photoUrl = data.photos[0].thumbnail_large.src;
+            if (data.photos && data.photos.length > 0) {
+              photoUrl = data.photos[0].thumbnail_large.src;
+            }
           }
         } catch (err) {}
       }
@@ -601,7 +652,9 @@
           const res = await fetch(`https://api.planespotters.net/pub/photos/icaotype/${encodeURIComponent(ac.t.trim())}`);
           if (res.ok) {
             const data = await res.json();
-            if (data.photos && data.photos.length > 0) photoUrl = data.photos[0].thumbnail_large.src;
+            if (data.photos && data.photos.length > 0) {
+              photoUrl = data.photos[0].thumbnail_large.src;
+            }
           }
         } catch (err) {}
       }
@@ -660,6 +713,14 @@
         tap: false
       }).setView([userConfig.lat, userConfig.lon], 9);
 
+      map.dragging.disable();
+      map.touchZoom.disable();
+      map.doubleClickZoom.disable();
+      map.scrollWheelZoom.disable();
+      map.boxZoom.disable();
+      map.keyboard.disable();
+      if (map.tap) map.tap.disable();
+
       L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; OpenStreetMap contributors'
       }).addTo(map);
@@ -675,6 +736,7 @@
       }).addTo(map);
 
       map.fitBounds(radarCircle.getBounds(), { padding: [20, 20] });
+      
       const lockedZoom = map.getZoom();
       map.setMinZoom(lockedZoom);
       map.setMaxZoom(lockedZoom);
@@ -718,7 +780,10 @@
         map.setMinZoom(newZoom);
         map.setMaxZoom(newZoom);
         map.setMaxBounds(radarCircle.getBounds());
-        requestAnimationFrame(() => updateMapClip());
+
+        requestAnimationFrame(() => {
+          updateMapClip();
+        });
       }
     }
 
@@ -726,44 +791,53 @@
       if (isFetching) return;
       isFetching = true;
 
-      try {
-        const url = `https://api.adsb.lol/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`;
-        const response = await fetch(url);
-        if (!response.ok) throw new Error('Network response was not ok');
-        const data = await response.json();
-        
-        liveAircraft = data.ac || data.aircraft || [];
+      const endpoints = [
+        `https://api.adsb.lol/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`,
+        `https://api.airplanes.live/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`
+      ];
+      let success = false;
 
-        if (liveAircraft.length > 0) {
-          liveAircraft.forEach(ac => {
-            if (!aircraftTrails[ac.hex]) aircraftTrails[ac.hex] = [];
-            const t = aircraftTrails[ac.hex];
-            const last = t[t.length - 1];
-            if (!last || Math.abs(last.lat - ac.lat) > 0.0005 || Math.abs(last.lon - ac.lon) > 0.0005) {
-              t.push({ lat: ac.lat, lon: ac.lon });
-              if (t.length > 20) t.shift();
+      for (let url of endpoints) {
+        try {
+          const response = await fetch(url, { headers: { 'Accept': 'application/json' } });
+          if (response.ok) {
+            const data = await response.json();
+            const aircrafts = data.ac || data.aircraft;
+            if (aircrafts) {
+              liveAircraft = aircrafts;
+              
+              liveAircraft.forEach(ac => {
+                if (!ac.hex || !ac.lat || !ac.lon) return;
+                if (!aircraftTrails[ac.hex]) aircraftTrails[ac.hex] = [];
+                const t = aircraftTrails[ac.hex];
+                const last = t[t.length - 1];
+                if (!last || Math.abs(last.lat - ac.lat) > 0.0005 || Math.abs(last.lon - ac.lon) > 0.0005) {
+                  t.push({ lat: ac.lat, lon: ac.lon });
+                  if (t.length > 20) t.shift();
+                }
+              });
+
+              updateUIState(true);
+              success = true;
+              break;
             }
-          });
-          updateUIState(true);
-        } else {
-          updateUIState(false);
-        }
-      } catch (error) {
-        updateUIState(false);
-      } finally {
-        isFetching = false;
+          }
+        } catch (err) {}
       }
+
+      if (!success) updateUIState(false);
+      isFetching = false;
     }
 
     function updateUIState(isConnected) {
       const statusEl = document.getElementById('connection-status');
       if (isConnected) {
-        statusEl.innerText = `Connected (${liveAircraft.length} targets)`;
+        statusEl.innerText = `Live Connected (${liveAircraft.length} targets)`;
         statusEl.style.color = '#00ff66';
         renderFlightBoard(liveAircraft);
         updateNearestScrollboard(liveAircraft);
       } else {
-        statusEl.innerText = `Scanning Sector... (Retrying)`;
+        statusEl.innerText = `Connecting... (Retrying)`;
         statusEl.style.color = '#ffb000';
       }
     }
@@ -775,11 +849,33 @@
 
       if (reg.startsWith('G-')) return false;
 
-      const milTypes = ['F16', 'F15', 'F18', 'F35', 'EF20', 'EUFI', 'TYPH', 'TOR', 'HAWK', 'C130', 'C17', 'A400', 'P8', 'RC135'];
-      if (milTypes.some(s => type.includes(s))) return true;
+      const civilExclusions = [
+        'MM16', 'B407', 'R22', 'R44', 'AS35', 'EC35', 'EC45', 'H125', 'H135', 
+        'B206', 'C172', 'PA28', 'SR20', 'SR22', 'C152', 'DA40', 'DA42', 'AS50'
+      ];
+      if (civilExclusions.some(ex => type.includes(ex))) return false;
 
-      const milPrefixes = ['RRR', 'ASCOT', 'SHF', 'VORTEX', 'RCH', 'DUKE', 'REACH'];
+      const milTypes = [
+        'F16', 'F15', 'F18', 'F35', 'F22', 'EF20', 'EUFI', 'TYPH', 'TOR', 
+        'HAWK', 'A10', 'C130', 'C17', 'A400', 'K35R', 'E3TF', 'V22', 'CH47', 
+        'AH64', 'UH60', 'NH90', 'P8', 'RC135', 'KC135'
+      ];
+      if (milTypes.some(s => {
+        if (s === 'C17') return type === 'C17' || type === 'C-17';
+        return type.includes(s);
+      })) return true;
+
+      const milPrefixes = ['RRR', 'ASCOT', 'SHF', 'VORTEX', 'RCH', 'DUKE', 'BOOM', 'REACH', 'CNV', 'GUN', 'VIPER'];
       if (milPrefixes.some(prefix => flight.startsWith(prefix))) return true;
+
+      const dbFlags = ac.dbFlags !== undefined ? ac.dbFlags : (ac.db_flags !== undefined ? ac.db_flags : 0);
+      if (dbFlags & 1) {
+        if (reg.startsWith('G-') || reg.startsWith('N')) return false;
+        return true;
+      }
+
+      const cat = (ac.category || '').toUpperCase();
+      if (cat === 'A7') return true;
 
       return false;
     }
@@ -801,6 +897,7 @@
 
       militaryList.forEach((ac, index) => {
         if (!ac.lat || !ac.lon) return;
+
         announceMilitaryAircraft(ac);
 
         const dist = calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon);
@@ -813,11 +910,11 @@
           </div>
           <div style="flex: 1; min-width: 0;">
             <div style="font-weight:bold; font-size:0.78rem; color:var(--accent-military); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 0 5px rgba(255,176,0,0.4);">${ac.flight ? ac.flight.trim() : ac.hex}</div>
-            <div style="font-size:0.65rem; color:var(--text-dim);">[${ac.t || 'MIL'}] • ${Math.round(ac.gs || 0)} kts</div>
+            <div style="font-size:0.65rem; color:var(--text-dim);">[${ac.t || 'MIL'}] • ${ac.gs || 0} kts</div>
           </div>
           <div style="text-align:right; flex-shrink: 0;">
             <div style="font-weight:bold; color:var(--accent-green); font-size:0.78rem; text-shadow: 0 0 5px rgba(0,255,102,0.4);">${dist.toFixed(1)} NM</div>
-            <div style="font-size:0.65rem; color:var(--text-dim);">${Math.round(ac.alt_baro || 0)} ft</div>
+            <div style="font-size:0.65rem; color:var(--text-dim);">${ac.alt_baro || 'Ground'} ft</div>
           </div>
         `;
         gridEl.appendChild(card);
@@ -831,6 +928,7 @@
     function processAutoScroll() {
       const grid = document.getElementById('aircraft-grid');
       if (!grid) return;
+
       const maxScroll = grid.scrollHeight - grid.clientHeight;
 
       if (maxScroll <= 0) {
@@ -841,7 +939,9 @@
 
       if (scrollState === 'PAUSED_TOP') {
         scrollTimer--;
-        if (scrollTimer <= 0) scrollState = 'SCROLLING';
+        if (scrollTimer <= 0) {
+          scrollState = 'SCROLLING';
+        }
         return;
       }
 
@@ -887,7 +987,7 @@
       const speedMph = Math.round(speedKts * 1.15078);
 
       document.getElementById('sb-distance').innerText = `${dist.toFixed(1)} NM`;
-      document.getElementById('sb-alt').innerText = `Alt: ${Math.round(lockedAircraft.alt_baro || 0)} ft`;
+      document.getElementById('sb-alt').innerText = `Alt: ${lockedAircraft.alt_baro || 'Ground'} ft`;
       document.getElementById('sb-speed').innerText = `Spd: ${speedKts} kts (${speedMph} mph)`;
       document.getElementById('sb-airline').innerText = flightStr;
       document.getElementById('sb-type').innerText = `Type: ${lockedAircraft.t || 'Aircraft'}`;
@@ -897,16 +997,20 @@
       document.getElementById('sb-bearing').innerText = `Bearing: ${bearing}°`;
       
       const squawkCode = lockedAircraft.squawk || '----';
-      document.getElementById('sb-squawk').innerText = `Squawk: ${squawkCode}`;
+      let squawkDisplay = squawkCode;
+      if (squawkCode === '7700') squawkDisplay = '7700 (EMERGENCY)';
+      else if (squawkCode === '7600') squawkDisplay = '7600 (RADIO FAIL)';
+      else if (squawkCode === '7500') squawkDisplay = '7500 (HIJACK)';
+      document.getElementById('sb-squawk').innerText = `Squawk: ${squawkDisplay}`;
       document.getElementById('sb-hex').innerText = `Hex: ${lockedAircraft.hex || '--'}`;
       document.getElementById('sb-reg').innerText = `Reg: ${lockedAircraft.r || 'Unassigned'}`;
 
       const vertRate = lockedAircraft.baro_rate !== undefined ? lockedAircraft.baro_rate : 0;
       const rateEl = document.getElementById('sb-rate');
       if (vertRate > 30) {
-        rateEl.innerHTML = `<span style="color: var(--accent-green);">▲ +${vertRate} ft/m</span>`;
+        rateEl.innerHTML = `<span style="color: var(--accent-green); text-shadow: 0 0 6px rgba(0,255,102,0.4);">▲ +${vertRate} ft/m</span>`;
       } else if (vertRate < -30) {
-        rateEl.innerHTML = `<span style="color: var(--accent-red);">▼ ${vertRate} ft/m</span>`;
+        rateEl.innerHTML = `<span style="color: var(--accent-red); text-shadow: 0 0 6px rgba(255,51,51,0.4);">▼ ${vertRate} ft/m</span>`;
       } else {
         rateEl.innerHTML = `<span style="color: var(--text-dim);">— Level Flight</span>`;
       }
@@ -919,8 +1023,9 @@
     function getSilhouetteType(typeCode) {
       if (!typeCode) return 'airliner';
       const t = typeCode.toUpperCase();
-      if (['F16', 'F15', 'F18', 'F35', 'EF20', 'EUFI', 'TYPH', 'TOR', 'HAWK'].some(s => t.includes(s))) return 'fighter';
-      if (['C17', 'C130', 'A400', 'K35R'].some(s => t.includes(s))) return 'heavy';
+      if (['F16', 'F15', 'F18', 'F35', 'F22', 'EF20', 'EUFI', 'TYPH', 'TOR', 'HAWK', 'A10'].some(s => t.includes(s))) return 'fighter';
+      if (['C17', 'C130', 'A400', 'K35R', 'KC135', 'E3TF', 'P8', 'RC135', 'B747', 'A380', 'C5'].some(s => t.includes(s))) return 'heavy';
+      if (['CH47', 'AH64', 'UH60', 'V22', 'EC35', 'R22', 'B407'].some(s => t.includes(s))) return 'helicopter';
       return 'airliner';
     }
 
@@ -950,6 +1055,10 @@
         ctx.lineTo(-5.5, 2.5);
         ctx.lineTo(-5.5, 1);
         ctx.lineTo(-2, -2);
+      } else if (type === 'helicopter') {
+        ctx.arc(0, 0, 3, 0, 2 * Math.PI);
+        ctx.moveTo(0, 3);
+        ctx.lineTo(0, 6);
       } else {
         ctx.moveTo(0, -6);
         ctx.lineTo(1.2, -2.5);
@@ -972,12 +1081,17 @@
     function drawRadarScope() {
       if (!ctx || !canvas || !map) return;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+
       processAutoScroll();
 
       const centerPt = map.latLngToContainerPoint([userConfig.lat, userConfig.lon]);
+
       const edgeLat = userConfig.lat + (userConfig.radiusNM / 60);
       const edgePt = map.latLngToContainerPoint([edgeLat, userConfig.lon]);
       const maxRadiusPx = Math.abs(edgePt.y - centerPt.y);
+
+      ctx.shadowColor = '#00ff66';
+      ctx.shadowBlur = 8;
 
       ctx.strokeStyle = 'rgba(0, 255, 102, 0.35)';
       ctx.lineWidth = 1;
@@ -986,9 +1100,41 @@
         ctx.beginPath();
         ctx.arc(centerPt.x, centerPt.y, r, 0, 2 * Math.PI);
         ctx.stroke();
+
+        ctx.fillStyle = 'rgba(0, 255, 102, 0.8)';
+        ctx.font = '9px system-ui';
+        ctx.fillText(`${(userConfig.radiusNM * factor).toFixed(0)} NM`, centerPt.x + 4, centerPt.y - r + 10);
       });
 
+      ctx.beginPath();
+      ctx.moveTo(centerPt.x - maxRadiusPx, centerPt.y);
+      ctx.lineTo(centerPt.x + maxRadiusPx, centerPt.y);
+      ctx.moveTo(centerPt.x, centerPt.y - maxRadiusPx);
+      ctx.lineTo(centerPt.x, centerPt.y + maxRadiusPx);
+      ctx.strokeStyle = 'rgba(0, 255, 102, 0.25)';
+      ctx.stroke();
+
+      ctx.fillStyle = '#00ff66';
+      ctx.font = 'bold 11px system-ui';
+      ctx.fillText('N', centerPt.x - 4, centerPt.y - maxRadiusPx - 5);
+      ctx.fillText('S', centerPt.x - 4, centerPt.y + maxRadiusPx + 15);
+      ctx.fillText('E', centerPt.x + maxRadiusPx + 5, centerPt.y + 4);
+      ctx.fillText('W', centerPt.x - maxRadiusPx - 18, centerPt.y + 4);
+
       sweepAngle += 0.015;
+      for (let i = 0; i < 15; i++) {
+        const trailAngle = sweepAngle - (i * 0.012);
+        const trailX = centerPt.x + Math.cos(trailAngle) * maxRadiusPx;
+        const trailY = centerPt.y + Math.sin(trailAngle) * maxRadiusPx;
+        
+        ctx.beginPath();
+        ctx.moveTo(centerPt.x, centerPt.y);
+        ctx.lineTo(trailX, trailY);
+        ctx.strokeStyle = `rgba(0, 255, 102, ${0.12 * (1 - i / 15)})`;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+
       const sweepX = centerPt.x + Math.cos(sweepAngle) * maxRadiusPx;
       const sweepY = centerPt.y + Math.sin(sweepAngle) * maxRadiusPx;
       ctx.beginPath();
@@ -998,32 +1144,76 @@
       ctx.lineWidth = 2;
       ctx.stroke();
 
+      Object.keys(aircraftTrails).forEach(hex => {
+        const trail = aircraftTrails[hex];
+        if (trail.length > 1) {
+          ctx.beginPath();
+          for (let i = 0; i < trail.length; i++) {
+            const p = map.latLngToContainerPoint([trail[i].lat, trail[i].lon]);
+            if (i === 0) ctx.moveTo(p.x, p.y);
+            else ctx.lineTo(p.x, p.y);
+          }
+          ctx.strokeStyle = 'rgba(0, 191, 255, 0.3)';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+      });
+
       if (liveAircraft && liveAircraft.length > 0) {
         liveAircraft.forEach(ac => {
           if (!ac.lat || !ac.lon) return;
+          
           const pt = map.latLngToContainerPoint([ac.lat, ac.lon]);
           const isMil = isMilitary(ac);
+          const isEmg = ac.squawk === '7500' || ac.squawk === '7600' || ac.squawk === '7700';
           const isLocked = lockedAircraft && lockedAircraft.hex === ac.hex;
 
           if (isLocked) {
+            const pulseRadius = 12 + Math.sin(Date.now() / 150) * 3;
             ctx.beginPath();
-            ctx.arc(pt.x, pt.y, 14, 0, 2 * Math.PI);
+            ctx.arc(pt.x, pt.y, pulseRadius, 0, 2 * Math.PI);
             ctx.strokeStyle = '#ff3333';
             ctx.lineWidth = 2;
+            ctx.shadowColor = '#ff3333';
+            ctx.shadowBlur = 10;
+            ctx.stroke();
+            ctx.shadowColor = '#00ff66';
+            ctx.shadowBlur = 8;
+          }
+
+          if (ac.track !== undefined) {
+            const trackRad = (ac.track - 90) * (Math.PI / 180);
+            const lineLen = 16;
+            const endX = pt.x + Math.cos(trackRad) * lineLen;
+            const endY = pt.y + Math.sin(trackRad) * lineLen;
+            ctx.beginPath();
+            ctx.moveTo(pt.x, pt.y);
+            ctx.lineTo(endX, endY);
+            ctx.strokeStyle = isMil ? '#ffb000' : '#00bfff';
+            ctx.lineWidth = 1.2;
             ctx.stroke();
           }
 
           ctx.save();
           ctx.translate(pt.x, pt.y);
-          ctx.rotate(((ac.track || 0) * Math.PI) / 180);
-          drawAircraftSilhouettePath(ctx, getSilhouetteType(ac.t));
-          ctx.fillStyle = isMil ? '#ffb000' : '#00ff66';
+          const heading = ac.track !== undefined ? ac.track : 0;
+          ctx.rotate((heading * Math.PI) / 180);
+
+          const silhouetteType = getSilhouetteType(ac.t);
+          drawAircraftSilhouettePath(ctx, silhouetteType);
+
+          ctx.fillStyle = isEmg ? '#ff3333' : (isMil ? '#ffb000' : '#00ff66');
           ctx.fill();
+          ctx.lineWidth = 0.8;
+          ctx.strokeStyle = '#020704';
+          ctx.stroke();
           ctx.restore();
 
           ctx.fillStyle = isMil ? '#ffb000' : '#00ff66';
           ctx.font = 'bold 9px system-ui';
-          ctx.fillText(`${ac.flight ? ac.flight.trim() : ac.hex}`, pt.x + 8, pt.y + 3);
+          const label = ac.flight ? ac.flight.trim() : ac.hex;
+          const altText = ac.alt_baro ? ` FL${Math.round(ac.alt_baro / 100)}` : '';
+          ctx.fillText(`${label}${altText}`, pt.x + 8, pt.y + 3);
         });
       }
 
@@ -1041,7 +1231,7 @@
       
       requestAnimationFrame(drawRadarScope);
       fetchLiveFlights();
-      setInterval(fetchLiveFlights, 10000);
+      setInterval(fetchLiveFlights, 12000);
     });
   </script>
 </body>
