@@ -566,46 +566,7 @@
       if (ac.from && ac.to) {
         return { fromCode: ac.from.toUpperCase(), toCode: ac.to.toUpperCase() };
       }
-
-      const callsign = (flightStr || '').toUpperCase().trim();
-      const heading = ac.track !== undefined ? ac.track : 0;
-      
-      if (isMilitary(ac)) {
-        if (callsign.startsWith('RRR') || callsign.startsWith('ASCOT')) {
-          return { fromCode: 'EGVN', toCode: 'EGUN' };
-        } else if (callsign.startsWith('SHF') || callsign.startsWith('VORTEX')) {
-          return { fromCode: 'EGXC', toCode: 'EGVN' };
-        } else if (callsign.startsWith('RCH') || callsign.startsWith('REACH') || callsign.startsWith('DUKE')) {
-          return { fromCode: 'ETAR', toCode: 'EGUN' };
-        } else if (callsign.startsWith('BOOM') || callsign.startsWith('ASY')) {
-          return { fromCode: 'EGVA', toCode: 'EGVN' };
-        }
-        return { fromCode: 'EGVN', toCode: 'EGXC' };
-      }
-
-      if (callsign.startsWith('RYR')) {
-        return { fromCode: 'EGNX', toCode: 'EHAM' };
-      } else if (callsign.startsWith('EXS') || callsign.startsWith('LS')) {
-        return { fromCode: 'EGNX', toCode: 'LEMD' };
-      } else if (callsign.startsWith('EZY') || callsign.startsWith('U2')) {
-        return { fromCode: 'EGCC', toCode: 'LFPG' };
-      } else if (callsign.startsWith('BAW') || callsign.startsWith('SHT')) {
-        return { fromCode: 'EGLL', toCode: 'KJFK' };
-      } else if (callsign.startsWith('KLM')) {
-        return { fromCode: 'EHAM', toCode: 'EGBB' };
-      } else if (callsign.startsWith('DLH')) {
-        return { fromCode: 'EDDF', toCode: 'EGLL' };
-      }
-
-      if (heading >= 315 || heading < 45) {
-        return { fromCode: 'EGNX', toCode: 'EGPH' };
-      } else if (heading >= 45 && heading < 135) {
-        return { fromCode: 'EGCC', toCode: 'EHAM' };
-      } else if (heading >= 135 && heading < 225) {
-        return { fromCode: 'EGPH', toCode: 'EGLL' };
-      } else {
-        return { fromCode: 'EHAM', toCode: 'EIDW' };
-      }
+      return { fromCode: 'UNKNOWN', toCode: 'UNKNOWN' };
     }
 
     function announceMilitaryAircraft(ac) {
@@ -614,10 +575,9 @@
       const dist = calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon);
       let triggeredPulse = false;
 
-      // Condition 2: Within 5 NM radius (Triggers red pulse again + speech announcement)
       if (dist <= 5.0 && !pulsed5Hexes.has(ac.hex)) {
         pulsed5Hexes.add(ac.hex);
-        pulsed35Hexes.add(ac.hex); // Mark 35nm as handled so it doesn't double pulse simultaneously
+        pulsed35Hexes.add(ac.hex);
         triggeredPulse = true;
         triggerRedPulse();
 
@@ -642,7 +602,6 @@
         }, 350);
       }
 
-      // Condition 1: New military aircraft in 35 NM radius
       if (!triggeredPulse && !pulsed35Hexes.has(ac.hex)) {
         pulsed35Hexes.add(ac.hex);
         triggerRedPulse();
@@ -1059,8 +1018,20 @@
       }
 
       const route = resolveFlightRoute(flightStr, lockedAircraft);
-      document.getElementById('sb-from').innerHTML = `<b>${route.fromCode}</b> — <span style="color:var(--text-dim);">${airportDatabase[route.fromCode] || 'Aerodrome'}</span>`;
-      document.getElementById('sb-to').innerHTML = `<b>${route.toCode}</b> — <span style="color:var(--text-dim);">${airportDatabase[route.toCode] || 'Aerodrome'}</span>`;
+      
+      const fromEl = document.getElementById('sb-from');
+      if (route.fromCode === 'UNKNOWN') {
+        fromEl.innerHTML = `<span style="color: var(--text-dim);">UNKNOWN</span>`;
+      } else {
+        fromEl.innerHTML = `<b>${route.fromCode}</b> — <span style="color:var(--text-dim);">${airportDatabase[route.fromCode] || 'Aerodrome'}</span>`;
+      }
+
+      const toEl = document.getElementById('sb-to');
+      if (route.toCode === 'UNKNOWN') {
+        toEl.innerHTML = `<span style="color: var(--text-dim);">UNKNOWN</span>`;
+      } else {
+        toEl.innerHTML = `<b>${route.toCode}</b> — <span style="color:var(--text-dim);">${airportDatabase[route.toCode] || 'Aerodrome'}</span>`;
+      }
     }
 
     function getSilhouetteType(typeCode) {
