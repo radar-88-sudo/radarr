@@ -737,12 +737,25 @@
     }
 
     // Keyboard shortcut for testing the alert-lock path at a desktop: 5/6/7 -> 7500/7600/7700, 9 -> 7777 (QRA).
+    // Also tracks the last few letters typed so "ufo" (typed in order, not necessarily fast)
+    // triggers the UFO easter egg - see triggerUfoSighting().
+    let ufoTypedBuffer = '';
     document.addEventListener('keydown', (e) => {
       if (!feedStarted) return;
       if (e.key === '5') triggerTestSquawk('7500');
       else if (e.key === '6') triggerTestSquawk('7600');
       else if (e.key === '7') triggerTestSquawk('7700');
       else if (e.key === '9') triggerTestSquawk('7777');
+
+      if (/^[a-zA-Z]$/.test(e.key)) {
+        ufoTypedBuffer = (ufoTypedBuffer + e.key.toLowerCase()).slice(-3);
+        if (ufoTypedBuffer === 'ufo') {
+          triggerUfoSighting();
+          ufoTypedBuffer = '';
+        }
+      } else if (e.key.length === 1) {
+        ufoTypedBuffer = ''; // any other single-character keystroke breaks the sequence
+      }
     });
 
 
@@ -1200,6 +1213,50 @@
     }
     window.triggerTestSquawk = triggerTestSquawk;
 
+    // ---------------------------------------------------------------------
+    // UFO easter egg: typing "ufo" on the keyboard (once the feed has started) spawns a fake
+    // unidentified contact a few NM out, same TTL/merge pattern as the test-squawk injector
+    // above. It's deliberately unremarkable - placeholder altitude/speed, the REGISTRATION_OVERRIDES
+    // 'UFO1' badge (see fetchAircraftPhoto) instead of a real airline logo, and no dedicated
+    // silhouette (type "UFO" doesn't match anything in pw-silhouettes, so it just falls back to
+    // the default airliner glyph). Most sightings squawk a normal 1200; some fraction squawk
+    // 7700 instead so it occasionally takes over the scrollboard/siren like a real emergency.
+    // ---------------------------------------------------------------------
+    const UFO_AIRCRAFT_TTL_MS = 90000;
+    const UFO_SQUAWK_7700_CHANCE = 0.3;
+    let ufoAircraft = null;
+    let ufoAircraftExpiryAt = 0;
+
+    function buildUfoAircraft() {
+      const bearingRad = Math.random() * 2 * Math.PI;
+      const distNM = 3 + Math.random() * 8;
+      const dLat = (distNM / 60) * Math.cos(bearingRad);
+      const dLon = (distNM / 60) * Math.sin(bearingRad) / Math.cos(userConfig.lat * Math.PI / 180);
+      return {
+        hex: 'UFO' + Math.floor(Math.random() * 9000 + 1000),
+        flight: 'UFO154 ',
+        r: 'UFO1', // drives the REGISTRATION_OVERRIDES logo/route badge
+        lat: userConfig.lat + dLat,
+        lon: userConfig.lon + dLon,
+        alt_baro: 55000 + Math.floor(Math.random() * 15000), // placeholder: implausibly high
+        gs: 900 + Math.floor(Math.random() * 500), // placeholder: implausibly fast
+        track: Math.floor(Math.random() * 360),
+        squawk: Math.random() < UFO_SQUAWK_7700_CHANCE ? '7700' : '1200',
+        t: 'UFO',
+        category: 'A0'
+      };
+    }
+
+    function triggerUfoSighting() {
+      ufoAircraft = buildUfoAircraft();
+      ufoAircraftExpiryAt = Date.now() + UFO_AIRCRAFT_TTL_MS;
+      console.log(`[UFO] Unidentified contact ${ufoAircraft.hex} inbound${ufoAircraft.squawk === '7700' ? ' - squawking 7700' : ''}, for ${UFO_AIRCRAFT_TTL_MS / 1000}s`);
+
+      liveAircraft = liveAircraft.filter(a => !a.hex || !a.hex.startsWith('UFO')).concat([ufoAircraft]);
+      updateUIState(true);
+    }
+    window.triggerUfoSighting = triggerUfoSighting;
+
     // The only place a route (From/To) is ever displayed is the scrollboard, locked onto
     // whichever aircraft is selected below. Route lookups should only ever target that one
     // aircraft - never the whole liveAircraft list, or we flood adsbdb/hexdb with lookups
@@ -1416,6 +1473,15 @@
                 }
               }
 
+              // Same for the UFO easter egg (see triggerUfoSighting).
+              if (ufoAircraft) {
+                if (Date.now() < ufoAircraftExpiryAt) {
+                  liveAircraft = liveAircraft.concat([ufoAircraft]);
+                } else {
+                  ufoAircraft = null;
+                }
+              }
+
               liveAircraft.forEach(ac => {
                 if (!ac.hex || !ac.lat || !ac.lon) return;
                 if (!aircraftTrails[ac.hex]) aircraftTrails[ac.hex] = [];
@@ -1613,6 +1679,21 @@
       }
     }
 
+    // Manual overrides for specific airframes, keyed by registration (ac.r), trimmed +
+    // uppercased - e.g. police/agency aircraft with no real airline code, or the UFO easter
+    // egg below. `logo` replaces the normal ICAO-callsign-prefix airline lookup with a plain
+    // text/colour badge (shown regardless of civil/military classification); `route` replaces
+    // the resolved/estimated From-To with fixed text instead of airport codes.
+    const REGISTRATION_OVERRIDES = {
+      'UKP154': {
+        logo: { text: 'POLICE', bg: '#ffffff', textColor: '#0a3fd9' },
+        route: { from: 'Fighting crime', to: 'Finding criminals' }
+      },
+      'UFO1': {
+        logo: { text: 'UFO', bg: '#000000', textColor: '#00ff66' }
+      }
+    };
+
     async function fetchAircraftPhoto(ac, isMil) {
       const logoBox = document.getElementById('sb-logo-box');
 
@@ -1627,8 +1708,19 @@
         </div>
       `;
 
+      const regOverride = REGISTRATION_OVERRIDES[(ac.r || '').trim().toUpperCase()];
+
+      if (regOverride && regOverride.logo) {
+        const overrideEl = document.getElementById('sb-airline-logo');
+        if (overrideEl) {
+          overrideEl.style.background = regOverride.logo.bg;
+          overrideEl.innerHTML = `<span style="font-weight:800; font-size:0.7rem; letter-spacing:0.04em; text-transform:uppercase; color:${regOverride.logo.textColor};">${regOverride.logo.text}</span>`;
+          overrideEl.style.display = 'flex';
+        }
+      }
       // Airline logo - civil flights only, derived from the callsign's ICAO airline prefix.
-      if (!isMil) {
+      // Skipped entirely when a registration override above already set the badge.
+      else if (!isMil) {
         const callsign = ac.flight ? ac.flight.trim() : '';
         const icaoCode = extractAirlineIcaoCode(callsign);
         if (icaoCode) {
@@ -1740,31 +1832,42 @@
         rateEl.innerHTML = `<span style="color: var(--text-dim);">— Level Flight</span>`;
       }
 
-      // Route: real data (adsbdb/hexdb) is shown in the normal green; when nothing real was
-      // found and we fall back to the heuristic guess, the container is flagged as
-      // "estimated" (dimmer amber text + a tag) so it's never visually indistinguishable
-      // from a confirmed route.
-      const route = resolveFlightRoute(flightStr, lockedAircraft);
-      const isEstimated = route.source === 'estimated';
-
       const routeContainer = document.getElementById('sb-route-container');
-      routeContainer.classList.toggle('route-estimated', isEstimated);
-
-      document.getElementById('sb-from').innerHTML =
-        `<b>${route.fromCode}</b> — <span style="color:var(--text-dim);">${route.fromName || airportDatabase[route.fromCode] || 'Aerodrome'}</span>`;
-      document.getElementById('sb-to').innerHTML =
-        `<b>${route.toCode}</b> — <span style="color:var(--text-dim);">${route.toName || airportDatabase[route.toCode] || 'Aerodrome'}</span>`;
-
       const tagEl = document.getElementById('sb-route-tag');
-      tagEl.style.display = 'inline-block';
-      if (isEstimated) {
-        tagEl.className = 'route-source-tag estimated';
-        tagEl.innerText = 'EST';
-        tagEl.title = 'No confirmed route data - estimated from callsign/heading';
+      const routeOverride = REGISTRATION_OVERRIDES[(lockedAircraft.r || '').trim().toUpperCase()];
+
+      if (routeOverride && routeOverride.route) {
+        // Fixed flavour text instead of a real route - not "estimated" (that styling/tag means
+        // "we tried to resolve a real route and couldn't"), just its own permanent from/to.
+        routeContainer.classList.remove('route-estimated');
+        document.getElementById('sb-from').innerHTML = `<b>${routeOverride.route.from}</b>`;
+        document.getElementById('sb-to').innerHTML = `<b>${routeOverride.route.to}</b>`;
+        tagEl.style.display = 'none';
       } else {
-        tagEl.className = 'route-source-tag confirmed';
-        tagEl.innerText = route.source === 'hexdb' ? 'HEXDB' : 'CONFIRMED';
-        tagEl.title = `Route data from ${route.source}`;
+        // Route: real data (adsbdb/hexdb) is shown in the normal green; when nothing real was
+        // found and we fall back to the heuristic guess, the container is flagged as
+        // "estimated" (dimmer amber text + a tag) so it's never visually indistinguishable
+        // from a confirmed route.
+        const route = resolveFlightRoute(flightStr, lockedAircraft);
+        const isEstimated = route.source === 'estimated';
+
+        routeContainer.classList.toggle('route-estimated', isEstimated);
+
+        document.getElementById('sb-from').innerHTML =
+          `<b>${route.fromCode}</b> — <span style="color:var(--text-dim);">${route.fromName || airportDatabase[route.fromCode] || 'Aerodrome'}</span>`;
+        document.getElementById('sb-to').innerHTML =
+          `<b>${route.toCode}</b> — <span style="color:var(--text-dim);">${route.toName || airportDatabase[route.toCode] || 'Aerodrome'}</span>`;
+
+        tagEl.style.display = 'inline-block';
+        if (isEstimated) {
+          tagEl.className = 'route-source-tag estimated';
+          tagEl.innerText = 'EST';
+          tagEl.title = 'No confirmed route data - estimated from callsign/heading';
+        } else {
+          tagEl.className = 'route-source-tag confirmed';
+          tagEl.innerText = route.source === 'hexdb' ? 'HEXDB' : 'CONFIRMED';
+          tagEl.title = `Route data from ${route.source}`;
+        }
       }
     }
 
