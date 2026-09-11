@@ -100,7 +100,7 @@
       flex: 1;
       padding: 0.25rem;
       display: grid;
-      grid-template-columns: 1fr 270px; /* Slimmer sidebar maximizes radar display area */
+      grid-template-columns: 1fr 240px; /* Optimised sidebar width to maximise radar canvas size */
       gap: 0.25rem;
       width: 100%;
       min-height: 0;
@@ -128,7 +128,7 @@
       filter: brightness(1.15) contrast(1.05) saturate(1.1);
       opacity: 0.7;
       pointer-events: none;
-      clip-path: circle(48% at 50% 50%);
+      clip-path: circle(50% at 50% 50%);
       transition: clip-path 0.2s ease-out;
     }
 
@@ -200,8 +200,8 @@
     }
 
     .ac-thumb {
-      width: 75px;
-      height: 50px;
+      width: 65px;
+      height: 45px;
       background: rgba(2, 8, 4, 0.95);
       border: 1px solid var(--card-border);
       border-radius: 4px;
@@ -801,7 +801,7 @@
         radius: radiusMeters
       }).addTo(map);
 
-      map.fitBounds(radarCircle.getBounds(), { padding: [5, 5] });
+      map.fitBounds(radarCircle.getBounds(), { padding: [0, 0] });
       
       const lockedZoom = map.getZoom();
       map.setMinZoom(lockedZoom);
@@ -822,10 +822,10 @@
         if (radiusPx && radiusPx > 50) {
           mapEl.style.clipPath = `circle(${radiusPx}px at ${centerPt.x}px ${centerPt.y}px)`;
         } else {
-          mapEl.style.clipPath = `circle(48% at 50% 50%)`;
+          mapEl.style.clipPath = `circle(50% at 50% 50%)`;
         }
       } catch (e) {
-        mapEl.style.clipPath = `circle(48% at 50% 50%)`;
+        mapEl.style.clipPath = `circle(50% at 50% 50%)`;
       }
     }
 
@@ -840,7 +840,7 @@
         map.setMinZoom(0);
         map.setMaxZoom(18);
         map.invalidateSize();
-        map.fitBounds(radarCircle.getBounds(), { padding: [5, 5] });
+        map.fitBounds(radarCircle.getBounds(), { padding: [0, 0] });
         
         const newZoom = map.getZoom();
         map.setMinZoom(newZoom);
