@@ -699,6 +699,15 @@
         map.setMinZoom(newZoom);
         map.setMaxZoom(newZoom);
         map.setMaxBounds(radarCircle.getBounds());
+
+        // Precisely clip map tiles to the circular radar boundary
+        const centerPt = map.latLngToContainerPoint([userConfig.lat, userConfig.lon]);
+        const edgeLat = userConfig.lat + (userConfig.radiusNM / 60);
+        const edgePt = map.latLngToContainerPoint([edgeLat, userConfig.lon]);
+        const radiusPx = Math.abs(edgePt.y - centerPt.y);
+
+        const mapEl = document.getElementById('map');
+        mapEl.style.clipPath = `circle(${radiusPx}px at ${centerPt.x}px ${centerPt.y}px)`;
       }
     }
 
