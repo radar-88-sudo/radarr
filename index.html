@@ -426,8 +426,8 @@
     const announcedMilHexes = new Set();
     let audioCtx = null;
 
-    let scrollState = 'SCROLLING'; // 'SCROLLING', 'PAUSED_BOTTOM'
-    let scrollTimer = 0;
+    let scrollState = 'PAUSED_TOP'; // 'PAUSED_TOP', 'SCROLLING', 'PAUSED_BOTTOM'
+    let scrollTimer = 120; // 2 seconds initial pause at the top
     let internalScrollPos = 0; // Float accumulator to bypass browser rounding
 
     function initKioskAudio() {
@@ -889,12 +889,21 @@
         return;
       }
 
+      if (scrollState === 'PAUSED_TOP') {
+        scrollTimer--;
+        if (scrollTimer <= 0) {
+          scrollState = 'SCROLLING';
+        }
+        return;
+      }
+
       if (scrollState === 'PAUSED_BOTTOM') {
         scrollTimer--;
         if (scrollTimer <= 0) {
           internalScrollPos = 0;
           grid.scrollTop = 0;
-          scrollState = 'SCROLLING';
+          scrollState = 'PAUSED_TOP';
+          scrollTimer = 120; // Exact 2 second pause at the top
         }
         return;
       }
