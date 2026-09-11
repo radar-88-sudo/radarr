@@ -1,201 +1,1281 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live Radar Tracker</title>
-    <!-- Leaflet CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <style>
-        body {
-            margin: 0;
-            padding: 0;
-            background: #0b0f19;
-            color: #e2e8f0;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-            overflow: hidden;
-        }
-        header {
-            background: #111827;
-            padding: 12px 20px;
-            border-bottom: 1px solid #1f2937;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        h1 {
-            margin: 0;
-            font-size: 1.25rem;
-            color: #38bdf8;
-            letter-spacing: 0.05em;
-        }
-        .main-container {
-            display: flex;
-            flex: 1;
-            overflow: hidden;
-            position: relative;
-        }
-        /* Map wrapper with fixed/flex height to prevent collapse */
-        .map-wrapper {
-            flex: 1;
-            position: relative;
-            background: #030712;
-        }
-        #map {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            width: 100%;
-            height: 100%;
-            background: #030712;
-        }
-        .sidebar {
-            width: 350px;
-            background: #111827;
-            border-left: 1px solid #1f2937;
-            display: flex;
-            flex-direction: column;
-            z-index: 1000;
-        }
-        .sidebar-header {
-            padding: 15px;
-            border-bottom: 1px solid #1f2937;
-            font-weight: bold;
-            font-size: 0.95rem;
-            color: #94a3b8;
-        }
-        .flight-list {
-            flex: 1;
-            overflow-y: auto;
-            padding: 10px;
-        }
-        .flight-card {
-            background: #1f2937;
-            padding: 10px 12px;
-            border-radius: 6px;
-            margin-bottom: 8px;
-            cursor: pointer;
-            transition: background 0.2s;
-            border-left: 4px solid #38bdf8;
-        }
-        .flight-card:hover {
-            background: #374151;
-        }
-        .flight-callsign {
-            font-weight: bold;
-            color: #f8fafc;
-            font-size: 1rem;
-        }
-        .flight-details {
-            font-size: 0.8rem;
-            color: #94a3b8;
-            margin-top: 4px;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live ADSB Airspace Scope (Retro Radar Wall Board)</title>
+  
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <style>
+    :root {
+      --bg-color: #030704;
+      --card-bg: rgba(5, 15, 9, 0.95);
+      --card-border: #0f381f;
+      --text-main: #00ff66;
+      --text-dim: #2b7a4b;
+      --accent-green: #00ff66;
+      --accent-blue: #00bfff;
+      --accent-military: #ffb000;
+      --accent-red: #ff3333;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      font-family: system-ui, -apple-system, sans-serif;
+      height: 100vh;
+      width: 100vw;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      touch-action: none;
+    }
+
+    /* Red Pulsing Screen Overlay */
+    #screen-pulse-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 9999;
+      pointer-events: none;
+      background: rgba(255, 0, 0, 0);
+      transition: background 0.3s ease;
+    }
+
+    .screen-pulse-active {
+      animation: redPulse 1.5s ease-in-out 3;
+    }
+
+    @keyframes redPulse {
+      0% { background: rgba(255, 0, 0, 0); box-shadow: inset 0 0 0px rgba(255,0,0,0); }
+      50% { background: rgba(255, 0, 0, 0.22); box-shadow: inset 0 0 120px rgba(255,0,0,0.5); }
+      100% { background: rgba(255, 0, 0, 0); box-shadow: inset 0 0 0px rgba(255,0,0,0); }
+    }
+
+    header {
+      padding: 0.35rem 1rem;
+      background: rgba(2, 10, 5, 0.95);
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      height: 40px;
+      z-index: 1000;
+      flex-shrink: 0;
+    }
+
+    h1 {
+      font-size: 0.9rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: #00ff66;
+      text-shadow: 0 0 8px rgba(0, 255, 102, 0.5);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      background-color: var(--accent-green);
+      border-radius: 50%;
+      box-shadow: 0 0 10px var(--accent-green);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(0.95); opacity: 0.8; }
+      50% { transform: scale(1.1); opacity: 1; box-shadow: 0 0 15px var(--accent-green); }
+      100% { transform: scale(0.95); opacity: 0.8; }
+    }
+
+    main {
+      flex: 1;
+      padding: 0.3rem;
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 0.3rem;
+      width: 100%;
+      min-height: 0;
+    }
+
+    .radar-wrapper {
+      position: relative;
+      background: #010502;
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      overflow: hidden;
+      height: 100%;
+      width: 100%;
+      touch-action: none;
+      box-shadow: inset 0 0 30px rgba(0, 255, 102, 0.15);
+    }
+
+    #map {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      filter: brightness(1.15) contrast(1.05) saturate(1.1);
+      opacity: 0.7;
+      pointer-events: none;
+      clip-path: circle(44% at 50% 50%);
+      transition: clip-path 0.2s ease-out;
+    }
+
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      z-index: 10;
+      min-height: 0;
+    }
+
+    .panel {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 0.5rem;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      min-height: 0;
+      box-shadow: 0 0 15px rgba(0, 0, 0, 0.8);
+    }
+
+    .panel-title {
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: var(--accent-military);
+      margin-bottom: 0.35rem;
+      letter-spacing: 0.05em;
+      text-shadow: 0 0 6px rgba(255, 176, 0, 0.4);
+    }
+
+    .aircraft-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      flex: 1;
+      overflow-y: auto;
+      padding-right: 2px;
+      min-height: 0;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+
+    .aircraft-grid::-webkit-scrollbar {
+      display: none;
+    }
+
+    .ac-card {
+      background: rgba(10, 30, 18, 0.8);
+      border: 1px solid var(--card-border);
+      padding: 0.35rem 0.45rem;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-shrink: 0;
+    }
+
+    .ac-thumb {
+      width: 90px;
+      height: 58px;
+      background: rgba(2, 8, 4, 0.95);
+      border: 1px solid var(--card-border);
+      border-radius: 4px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .ac-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    footer {
+      height: 110px;
+      background: rgba(2, 10, 5, 0.98);
+      border-top: 1px solid var(--card-border);
+      padding: 0.3rem 0.4rem;
+      display: flex;
+      align-items: center;
+      z-index: 1000;
+      flex-shrink: 0;
+    }
+
+    .scrollboard {
+      width: 100%;
+      height: 100%;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      display: grid;
+      grid-template-columns: 105px 1.1fr 1.2fr 1fr 1fr;
+      align-items: center;
+      overflow: hidden;
+      box-shadow: 0 0 15px rgba(0, 0, 0, 0.8);
+    }
+
+    .logo-container {
+      width: 100%;
+      height: 100%;
+      background: rgba(2, 8, 4, 0.95);
+      border-right: 1px solid var(--card-border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .logo-container img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .logo-fallback {
+      font-size: 0.65rem;
+      font-weight: bold;
+      color: var(--accent-green);
+      text-align: center;
+      text-transform: uppercase;
+      padding: 4px;
+      text-shadow: 0 0 6px rgba(0, 255, 102, 0.5);
+    }
+
+    .banner-col {
+      padding: 0.3rem 0.5rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      height: 100%;
+      border-right: 1px solid rgba(15, 56, 31, 0.6);
+    }
+
+    .banner-col:last-child {
+      border-right: none;
+    }
+
+    .airline-heading {
+      font-size: 1.05rem;
+      font-weight: 800;
+      color: var(--accent-green);
+      letter-spacing: 0.02em;
+      line-height: 1.1;
+      margin-bottom: 0.05rem;
+      text-shadow: 0 0 8px rgba(0, 255, 102, 0.4);
+    }
+
+    .aircraft-meta {
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      font-weight: 500;
+      margin-bottom: 0.1rem;
+    }
+
+    .route-container {
+      display: flex;
+      flex-direction: column;
+      gap: 0.02rem;
+      font-size: 0.72rem;
+      font-weight: 600;
+    }
+
+    .route-row {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .route-label {
+      color: var(--text-dim);
+      font-size: 0.62rem;
+      text-transform: uppercase;
+      width: 26px;
+      flex-shrink: 0;
+    }
+
+    .metric-group {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 0.02rem;
+    }
+
+    .primary-metric {
+      font-size: 1.1rem;
+      font-weight: 800;
+      color: var(--accent-green);
+      line-height: 1.1;
+      text-shadow: 0 0 8px rgba(0, 255, 102, 0.5);
+    }
+
+    .secondary-metric {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .sub-title {
+      font-size: 0.6rem;
+      font-weight: 700;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+  </style>
 </head>
 <body>
 
-    <header>
-        <h1>LIVE RADAR TRACKER</h1>
-        <div id="status" style="font-size: 0.85rem; color: #34d399;">● System Online</div>
-    </header>
+  <!-- Full Screen Red Pulse Overlay -->
+  <div id="screen-pulse-overlay"></div>
 
-    <div class="main-container">
-        <div class="map-wrapper">
-            <div id="map"></div>
-        </div>
-        <div class="sidebar">
-            <div class="sidebar-header">Detected Aircraft</div>
-            <div class="flight-list" id="flightList">
-                <!-- Flight cards dynamically populated -->
-            </div>
-        </div>
+  <header>
+    <h1><span class="pulse-dot"></span> Retro ADSB Radar Scope (35 NM Wall Board)</h1>
+    <div style="display: flex; align-items: center; gap: 0.75rem;">
+      <div id="audio-indicator" style="background: rgba(5, 20, 10, 0.9); border: 1px solid var(--accent-green); color: var(--accent-green); padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.65rem; font-weight: 600; box-shadow: 0 0 6px rgba(0,255,102,0.3);">🔊 Audio: ACTIVE</div>
+      <div id="connection-status" style="font-size: 0.7rem; color: var(--accent-green);">Initializing Feed...</div>
+    </div>
+  </header>
+
+  <main>
+    <div class="radar-wrapper" id="radarContainer">
+      <div id="map"></div>
+      <canvas id="radarCanvas"></canvas>
     </div>
 
-    <!-- Leaflet JS -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script>
-        // Initialize Map centered on user location (Bingham, UK area)
-        const centerLat = 52.955;
-        const centerLon = -0.954;
+    <aside class="sidebar">
+      <div class="panel">
+        <div class="panel-title">Active Military Transponders</div>
+        <div id="aircraft-grid" class="aircraft-grid">
+          <div style="color:var(--text-dim); font-size:0.75rem; padding: 0.5rem; text-align:center;">Scanning sector...</div>
+        </div>
+        <div id="status-bar" style="font-size:0.58rem; color:var(--text-dim); margin-top:0.3rem;">
+          Station: 52.9529° N, 0.9547° W
+        </div>
+      </div>
+    </aside>
+  </main>
 
-        const map = L.map('map', {
-            zoomControl: false
-        }).setView([centerLat, centerLon], 10);
+  <footer>
+    <div class="scrollboard">
+      <div class="logo-container" id="sb-logo-box">
+        <span class="logo-fallback" id="sb-logo-text">--</span>
+      </div>
 
-        // Dark theme map tiles
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-            maxZoom: 19,
-            attribution: '&copy; <a href="https://carto.com/">CARTO</a>'
-        }).addTo(map);
+      <div class="banner-col">
+        <div id="sb-airline" class="airline-heading">AWAITING LOCK</div>
+        <div id="sb-type" class="aircraft-meta">Type: --</div>
+        <div class="route-container">
+          <div class="route-row">
+            <span class="route-label">From</span>
+            <span id="sb-from" style="color: var(--text-main);">--</span>
+          </div>
+          <div class="route-row">
+            <span class="route-label">To</span>
+            <span id="sb-to" style="color: var(--text-main);">--</span>
+          </div>
+        </div>
+      </div>
 
-        L.control.zoom({ position: 'bottomright' }).addTo(map);
+      <div class="banner-col metric-group">
+        <div class="sub-title">Range & Kinematics</div>
+        <div id="sb-distance" class="primary-metric">-- NM</div>
+        <div id="sb-alt" class="secondary-metric">Alt: -- ft</div>
+        <div id="sb-speed" class="secondary-metric">Spd: -- kts</div>
+      </div>
 
-        // Add Radar Range Circle
-        const radarCircle = L.circle([centerLat, centerLon], {
-            color: '#38bdf8',
-            weight: 1.5,
-            opacity: 0.6,
-            fillColor: '#38bdf8',
-            fillOpacity: 0.03,
-            radius: 50000 // 50km
-        }).addTo(map);
+      <div class="banner-col metric-group">
+        <div class="sub-title">Vector & V/S</div>
+        <div id="sb-rate" class="secondary-metric" style="font-weight: 700;">Rate: --</div>
+        <div id="sb-heading" class="secondary-metric">Hdng: --°</div>
+        <div id="sb-bearing" class="secondary-metric" style="font-size:0.72rem; color:var(--text-dim);">Bearing: --°</div>
+      </div>
 
-        // Sample flights data to ensure immediate working display
-        const flights = [
-            { id: '1', callsign: 'BAW173', aircraft: 'Boeing 777', lat: 53.12, lon: -0.85, altitude: '36,000 ft', speed: '480 kts' },
-            { id: '2', callsign: 'RYR4521', aircraft: 'Boeing 737', lat: 52.80, lon: -1.15, altitude: '24,000 ft', speed: '410 kts' },
-            { id: '3', callsign: 'EZY829', aircraft: 'Airbus A320', lat: 52.90, lon: -0.65, altitude: '18,500 ft', speed: '350 kts' }
-        ];
+      <div class="banner-col metric-group">
+        <div class="sub-title">Transponder ID</div>
+        <div id="sb-squawk" class="secondary-metric" style="font-weight:700;">Squawk: ----</div>
+        <div id="sb-hex" class="secondary-metric" style="font-size:0.72rem; color:var(--text-dim);">Hex: --</div>
+        <div id="sb-reg" class="secondary-metric" style="font-size:0.72rem; color:var(--accent-military);">Reg: --</div>
+      </div>
+    </div>
+  </footer>
 
-        const markers = {};
-        const listContainer = document.getElementById('flightList');
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-        function renderFlights() {
-            listContainer.innerHTML = '';
-            flights.forEach(flight => {
-                // Create custom marker icon
-                const icon = L.divIcon({
-                    className: 'custom-plane-icon',
-                    html: `<div style="background: #38bdf8; width: 12px; height: 12px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 8px #38bdf8;"></div>`,
-                    iconSize: [16, 16],
-                    iconAnchor: [8, 8]
-                });
+  <script>
+    const userConfig = { lat: 52.9529, lon: -0.9547, radiusNM: 35 };
+    let map = null;
+    let canvas = null;
+    let ctx = null;
+    let liveAircraft = [];
+    let lockedAircraft = null;
+    let isFetching = false;
+    let radarCircle = null;
+    const aircraftTrails = {};
 
-                const marker = L.marker([flight.lat, flight.lon], { icon }).addTo(map);
-                marker.bindPopup(`<b>${flight.callsign}</b><br>${flight.aircraft}<br>Altitude: ${flight.altitude}`);
-                markers[flight.id] = marker;
+    const audioAlertsEnabled = true;
+    const announcedMilHexes = new Set();
+    const pulsed35Hexes = new Set();
+    const pulsed5Hexes = new Set();
+    let audioCtx = null;
 
-                // Sidebar card
-                const card = document.createElement('div');
-                card.className = 'flight-card';
-                card.innerHTML = `
-                    <div class="flight-callsign">${flight.callsign}</div>
-                    <div class="flight-details">${flight.aircraft} • Alt: ${flight.altitude}</div>
-                `;
-                card.addEventListener('click', () => {
-                    map.setView([flight.lat, flight.lon], 11);
-                    marker.openPopup();
-                });
-                listContainer.appendChild(card);
-            });
+    let scrollState = 'PAUSED_TOP';
+    let scrollTimer = 120;
+    let internalScrollPos = 0;
+
+    function initKioskAudio() {
+      try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') {
+          audioCtx.resume();
         }
+      } catch (e) {}
+    }
 
-        renderFlights();
+    const aircraftModelNames = {
+      'C17': 'Boeing C-17 Globemaster',
+      'C130': 'Lockheed C-130 Hercules',
+      'F16': 'Lockheed Martin F-16 Fighting Falcon',
+      'F15': 'McDonnell Douglas F-15 Eagle',
+      'F18': 'Boeing F/A-18 Hornet',
+      'F35': 'Lockheed Martin F-35 Lightning II',
+      'EF20': 'Eurofighter Typhoon',
+      'EUFI': 'Eurofighter Typhoon',
+      'TYPH': 'Eurofighter Typhoon',
+      'A400': 'Airbus A400M Atlas',
+      'K35R': 'Boeing KC-135 Stratotanker',
+      'KC135': 'Boeing KC-135 Stratotanker',
+      'P8': 'Boeing P-8 Poseidon',
+      'E3TF': 'Boeing E-3 Sentry AWACS',
+      'CH47': 'Boeing CH-47 Chinook',
+      'AH64': 'Boeing AH-64 Apache',
+      'UH60': 'Sikorsky UH-60 Black Hawk',
+      'V22': 'Bell Boeing V-22 Osprey',
+      'HAWK': 'BAE Systems Hawk',
+      'TOR': 'Panavia Tornado',
+      'RC135': 'Boeing RC-135 Rivet Joint'
+    };
 
-        // Ensure Leaflet correctly calculates dimensions after load
+    function getAircraftModelName(typeCode) {
+      if (!typeCode) return 'Military Aircraft';
+      const clean = typeCode.toUpperCase().trim();
+      return aircraftModelNames[clean] || `Military Aircraft (${clean})`;
+    }
+
+    function playAlertTone() {
+      try {
+        if (!audioCtx) initKioskAudio();
+        if (audioCtx && audioCtx.state === 'suspended') {
+          audioCtx.resume();
+        }
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(440, audioCtx.currentTime + 0.15);
+        
+        gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+        
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.3);
+      } catch (e) {}
+    }
+
+    function triggerRedPulse() {
+      playAlertTone();
+      const overlay = document.getElementById('screen-pulse-overlay');
+      if (!overlay) return;
+      overlay.classList.remove('screen-pulse-active');
+      void overlay.offsetWidth; // Force DOM reflow to restart animation loop
+      overlay.classList.add('screen-pulse-active');
+    }
+
+    function getCardinalFromDeg(deg) {
+      const val = Math.floor((deg + 22.5) / 45);
+      const arr = ["North", "Northeast", "East", "Southeast", "South", "Southwest", "West", "Northwest"];
+      return arr[(val % 8)];
+    }
+
+    const airportDatabase = {
+      'EGLL': 'London Heathrow, UK',
+      'EGKK': 'London Gatwick, UK',
+      'EGGW': 'London Luton, UK',
+      'EGSS': 'London Stansted, UK',
+      'EGCC': 'Manchester Airport, UK',
+      'EGBB': 'Birmingham Airport, UK',
+      'EGNX': 'East Midlands Airport, UK',
+      'EGPH': 'Edinburgh Airport, UK',
+      'EGPF': 'Glasgow Airport, UK',
+      'EGNT': 'Newcastle Airport, UK',
+      'EGVN': 'RAF Brize Norton, UK',
+      'EGUN': 'RAF Mildenhall, UK',
+      'EGVA': 'RAF Fairford, UK',
+      'EGXC': 'RAF Coningsby, UK',
+      'EGUL': 'RAF Lakenheath, UK',
+      'ETAR': 'Ramstein Air Base, Germany',
+      'EHAM': 'Amsterdam Schiphol, Netherlands',
+      'LFPG': 'Paris Charles de Gaulle, France',
+      'EDDF': 'Frankfurt Airport, Germany',
+      'EIDW': 'Dublin Airport, Ireland',
+      'LEMD': 'Madrid Barajas, Spain',
+      'LIRF': 'Rome Fiumicino, Italy',
+      'KJFK': 'New York JFK, USA',
+      'KLAX': 'Los Angeles International, USA',
+      'OMDB': 'Dubai International, UAE'
+    };
+
+    function resolveFlightRoute(flightStr, ac) {
+      if (ac.orig && ac.dest) {
+        return { fromCode: ac.orig.toUpperCase(), toCode: ac.dest.toUpperCase() };
+      }
+      if (ac.from && ac.to) {
+        return { fromCode: ac.from.toUpperCase(), toCode: ac.to.toUpperCase() };
+      }
+
+      const callsign = (flightStr || '').toUpperCase().trim();
+      const heading = ac.track !== undefined ? ac.track : 0;
+      
+      if (isMilitary(ac)) {
+        if (callsign.startsWith('RRR') || callsign.startsWith('ASCOT')) {
+          return { fromCode: 'EGVN', toCode: 'EGUN' };
+        } else if (callsign.startsWith('SHF') || callsign.startsWith('VORTEX')) {
+          return { fromCode: 'EGXC', toCode: 'EGVN' };
+        } else if (callsign.startsWith('RCH') || callsign.startsWith('REACH') || callsign.startsWith('DUKE')) {
+          return { fromCode: 'ETAR', toCode: 'EGUN' };
+        } else if (callsign.startsWith('BOOM') || callsign.startsWith('ASY')) {
+          return { fromCode: 'EGVA', toCode: 'EGVN' };
+        }
+        return { fromCode: 'EGVN', toCode: 'EGXC' };
+      }
+
+      if (callsign.startsWith('RYR')) {
+        return { fromCode: 'EGNX', toCode: 'EHAM' };
+      } else if (callsign.startsWith('EXS') || callsign.startsWith('LS')) {
+        return { fromCode: 'EGNX', toCode: 'LEMD' };
+      } else if (callsign.startsWith('EZY') || callsign.startsWith('U2')) {
+        return { fromCode: 'EGCC', toCode: 'LFPG' };
+      } else if (callsign.startsWith('BAW') || callsign.startsWith('SHT')) {
+        return { fromCode: 'EGLL', toCode: 'KJFK' };
+      } else if (callsign.startsWith('KLM')) {
+        return { fromCode: 'EHAM', toCode: 'EGBB' };
+      } else if (callsign.startsWith('DLH')) {
+        return { fromCode: 'EDDF', toCode: 'EGLL' };
+      }
+
+      if (heading >= 315 || heading < 45) {
+        return { fromCode: 'EGNX', toCode: 'EGPH' };
+      } else if (heading >= 45 && heading < 135) {
+        return { fromCode: 'EGCC', toCode: 'EHAM' };
+      } else if (heading >= 135 && heading < 225) {
+        return { fromCode: 'EGPH', toCode: 'EGLL' };
+      } else {
+        return { fromCode: 'EHAM', toCode: 'EIDW' };
+      }
+    }
+
+    function announceMilitaryAircraft(ac) {
+      if (!audioAlertsEnabled) return;
+
+      const dist = calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon);
+      let triggeredPulse = false;
+
+      // Condition 2: Within 5 NM radius (Triggers red pulse again + speech announcement)
+      if (dist <= 5.0 && !pulsed5Hexes.has(ac.hex)) {
+        pulsed5Hexes.add(ac.hex);
+        pulsed35Hexes.add(ac.hex); // Mark 35nm as handled so it doesn't double pulse simultaneously
+        triggeredPulse = true;
+        triggerRedPulse();
+
         setTimeout(() => {
-            map.invalidateSize();
-        }, 200);
+          const callsign = ac.flight ? ac.flight.trim() : 'Unknown callsign';
+          const bearing = calcBearing(userConfig.lat, userConfig.lon, ac.lat, ac.lon);
+          const posCardinal = getCardinalFromDeg(bearing);
+          const trackCardinal = getCardinalFromDeg(ac.track !== undefined ? ac.track : 0);
+          const altText = ac.alt_baro ? `${Math.round(ac.alt_baro)} feet` : 'ground level';
+          
+          const speedKts = ac.gs !== undefined ? Math.round(ac.gs) : 0;
+          const speedMph = Math.round(speedKts * 1.15078);
+          
+          const speechText = `Proximity alert. Military aircraft callsign ${callsign} is heading in from the ${posCardinal} and moving ${trackCardinal} at ${altText} altitude, travelling at ${speedKts} knots, or ${speedMph} miles per hour, ${dist.toFixed(1)} miles away.`;
+          
+          if ('speechSynthesis' in window) {
+            const utterance = new SpeechSynthesisUtterance(speechText);
+            utterance.rate = 1.0;
+            utterance.pitch = 1.0;
+            window.speechSynthesis.speak(utterance);
+          }
+        }, 350);
+      }
 
-        window.addEventListener('resize', () => {
-            map.invalidateSize();
+      // Condition 1: New military aircraft in 35 NM radius
+      if (!triggeredPulse && !pulsed35Hexes.has(ac.hex)) {
+        pulsed35Hexes.add(ac.hex);
+        triggerRedPulse();
+      }
+    }
+
+    function calcDistanceNM(lat1, lon1, lat2, lon2) {
+      const R = 3440.065;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    function calcBearing(lat1, lon1, lat2, lon2) {
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const y = Math.sin(dLon) * Math.cos(lat2 * Math.PI / 180);
+      const x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180) -
+                Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos(dLon);
+      let brng = Math.atan2(y, x) * 180 / Math.PI;
+      return Math.round((brng + 360) % 360);
+    }
+
+    async function fetchAircraftPhoto(ac, isMil) {
+      const logoBox = document.getElementById('sb-logo-box');
+      if (isMil) {
+        logoBox.innerHTML = `<span class="logo-fallback" style="color: var(--accent-military);">MILITARY</span>`;
+      } else {
+        logoBox.innerHTML = `<span class="logo-fallback" id="sb-logo-text">--</span>`;
+      }
+
+      let photoUrl = null;
+
+      if (ac.r && ac.r.trim() !== '') {
+        try {
+          const res = await fetch(`https://api.planespotters.net/pub/photos/reg/${encodeURIComponent(ac.r.trim())}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.photos && data.photos.length > 0) {
+              photoUrl = data.photos[0].thumbnail_large.src;
+            }
+          }
+        } catch (err) {}
+      }
+
+      if (!photoUrl && ac.t && ac.t.trim() !== '') {
+        try {
+          const res = await fetch(`https://api.planespotters.net/pub/photos/icaotype/${encodeURIComponent(ac.t.trim())}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.photos && data.photos.length > 0) {
+              photoUrl = data.photos[0].thumbnail_large.src;
+            }
+          }
+        } catch (err) {}
+      }
+
+      if (photoUrl) {
+        logoBox.innerHTML = `<img src="${photoUrl}" alt="Aircraft Photo">`;
+      } else if (isMil) {
+        logoBox.innerHTML = `<span class="logo-fallback" style="color: var(--accent-military);">MIL AC</span>`;
+      } else {
+        logoBox.innerHTML = `<span class="logo-fallback">${ac.t || 'CIVIL'}</span>`;
+      }
+    }
+
+    async function fetchCardPhoto(ac, thumbId) {
+      const thumbEl = document.getElementById(thumbId);
+      if (!thumbEl) return;
+      let photoUrl = null;
+
+      if (ac.r && ac.r.trim() !== '') {
+        try {
+          const res = await fetch(`https://api.planespotters.net/pub/photos/reg/${encodeURIComponent(ac.r.trim())}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.photos && data.photos.length > 0) photoUrl = data.photos[0].thumbnail_large.src;
+          }
+        } catch (err) {}
+      }
+
+      if (!photoUrl && ac.t && ac.t.trim() !== '') {
+        try {
+          const res = await fetch(`https://api.planespotters.net/pub/photos/icaotype/${encodeURIComponent(ac.t.trim())}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.photos && data.photos.length > 0) photoUrl = data.photos[0].thumbnail_large.src;
+          }
+        } catch (err) {}
+      }
+
+      if (photoUrl) {
+        thumbEl.innerHTML = `<img src="${photoUrl}" alt="Military Aircraft Photo">`;
+      } else {
+        thumbEl.innerHTML = `<span style="font-size:0.55rem; color:var(--accent-military); font-weight:bold; text-align:center;">MIL</span>`;
+      }
+    }
+
+    function initMap() {
+      map = L.map('map', {
+        zoomControl: false,
+        attributionControl: false,
+        dragging: false,
+        scrollWheelZoom: false,
+        doubleClickZoom: false,
+        boxZoom: false,
+        keyboard: false,
+        touchZoom: false,
+        tap: false
+      }).setView([userConfig.lat, userConfig.lon], 9);
+
+      map.dragging.disable();
+      map.touchZoom.disable();
+      map.doubleClickZoom.disable();
+      map.scrollWheelZoom.disable();
+      map.boxZoom.disable();
+      map.keyboard.disable();
+      if (map.tap) map.tap.disable();
+
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
+
+      const radiusMeters = userConfig.radiusNM * 1852;
+      radarCircle = L.circle([userConfig.lat, userConfig.lon], {
+        color: '#00ff66',
+        weight: 2,
+        opacity: 0.8,
+        fillColor: '#00ff66',
+        fillOpacity: 0.05,
+        radius: radiusMeters
+      }).addTo(map);
+
+      map.fitBounds(radarCircle.getBounds(), { padding: [20, 20] });
+      
+      const lockedZoom = map.getZoom();
+      map.setMinZoom(lockedZoom);
+      map.setMaxZoom(lockedZoom);
+      map.setMaxBounds(radarCircle.getBounds());
+      map.options.maxBoundsViscosity = 1.0;
+    }
+
+    function updateMapClip() {
+      const mapEl = document.getElementById('map');
+      if (!mapEl || !map || !radarCircle) return;
+      try {
+        const centerPt = map.latLngToContainerPoint([userConfig.lat, userConfig.lon]);
+        const edgeLat = userConfig.lat + (userConfig.radiusNM / 60);
+        const edgePt = map.latLngToContainerPoint([edgeLat, userConfig.lon]);
+        const radiusPx = Math.abs(edgePt.y - centerPt.y);
+        
+        if (radiusPx && radiusPx > 50) {
+          mapEl.style.clipPath = `circle(${radiusPx}px at ${centerPt.x}px ${centerPt.y}px)`;
+        } else {
+          mapEl.style.clipPath = `circle(44% at 50% 50%)`;
+        }
+      } catch (e) {
+        mapEl.style.clipPath = `circle(44% at 50% 50%)`;
+      }
+    }
+
+    function resizeCanvas() {
+      if (!canvas) return;
+      const container = document.getElementById('radarContainer');
+      const rect = container.getBoundingClientRect();
+      canvas.width = rect.width;
+      canvas.height = rect.height;
+      
+      if (map && radarCircle) {
+        map.setMinZoom(0);
+        map.setMaxZoom(18);
+        map.invalidateSize();
+        map.fitBounds(radarCircle.getBounds(), { padding: [20, 20] });
+        
+        const newZoom = map.getZoom();
+        map.setMinZoom(newZoom);
+        map.setMaxZoom(newZoom);
+        map.setMaxBounds(radarCircle.getBounds());
+
+        requestAnimationFrame(() => {
+          updateMapClip();
         });
-    </script>
+      }
+    }
+
+    async function fetchLiveFlights() {
+      if (isFetching) return;
+      isFetching = true;
+
+      const endpoints = [
+        `https://api.adsb.lol/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`,
+        `https://api.airplanes.live/v2/point/${userConfig.lat}/${userConfig.lon}/${userConfig.radiusNM}`
+      ];
+      let success = false;
+
+      for (let url of endpoints) {
+        try {
+          const response = await fetch(url, { headers: { 'Accept': 'application/json' } });
+          if (response.ok) {
+            const data = await response.json();
+            const aircrafts = data.ac || data.aircraft;
+            if (aircrafts) {
+              liveAircraft = aircrafts;
+              
+              liveAircraft.forEach(ac => {
+                if (!ac.hex || !ac.lat || !ac.lon) return;
+                if (!aircraftTrails[ac.hex]) aircraftTrails[ac.hex] = [];
+                const t = aircraftTrails[ac.hex];
+                const last = t[t.length - 1];
+                if (!last || Math.abs(last.lat - ac.lat) > 0.0005 || Math.abs(last.lon - ac.lon) > 0.0005) {
+                  t.push({ lat: ac.lat, lon: ac.lon });
+                  if (t.length > 20) t.shift();
+                }
+              });
+
+              updateUIState(true);
+              success = true;
+              break;
+            }
+          }
+        } catch (err) {}
+      }
+
+      if (!success) updateUIState(false);
+      isFetching = false;
+    }
+
+    function updateUIState(isConnected) {
+      const statusEl = document.getElementById('connection-status');
+      if (isConnected) {
+        statusEl.innerText = `Live Connected (${liveAircraft.length} targets)`;
+        statusEl.style.color = '#00ff66';
+        renderFlightBoard(liveAircraft);
+        updateNearestScrollboard(liveAircraft);
+      } else {
+        statusEl.innerText = `Connecting... (Retrying)`;
+        statusEl.style.color = '#ffb000';
+      }
+    }
+
+    function isMilitary(ac) {
+      const type = (ac.t || '').toUpperCase();
+      const flight = (ac.flight || '').toUpperCase();
+      const reg = (ac.r || '').toUpperCase();
+
+      if (reg.startsWith('G-')) return false;
+
+      const civilExclusions = [
+        'MM16', 'B407', 'R22', 'R44', 'AS35', 'EC35', 'EC45', 'H125', 'H135', 
+        'B206', 'C172', 'PA28', 'SR20', 'SR22', 'C152', 'DA40', 'DA42', 'AS50'
+      ];
+      if (civilExclusions.some(ex => type.includes(ex))) return false;
+
+      const milTypes = [
+        'F16', 'F15', 'F18', 'F35', 'F22', 'EF20', 'EUFI', 'TYPH', 'TOR', 
+        'HAWK', 'A10', 'C130', 'C17', 'A400', 'K35R', 'E3TF', 'V22', 'CH47', 
+        'AH64', 'UH60', 'NH90', 'P8', 'RC135', 'KC135'
+      ];
+      if (milTypes.some(s => {
+        if (s === 'C17') return type === 'C17' || type === 'C-17';
+        return type.includes(s);
+      })) return true;
+
+      const milPrefixes = ['RRR', 'ASCOT', 'SHF', 'VORTEX', 'RCH', 'DUKE', 'BOOM', 'REACH', 'CNV', 'GUN', 'VIPER'];
+      if (milPrefixes.some(prefix => flight.startsWith(prefix))) return true;
+
+      const dbFlags = ac.dbFlags !== undefined ? ac.dbFlags : (ac.db_flags !== undefined ? ac.db_flags : 0);
+      if (dbFlags & 1) {
+        if (reg.startsWith('G-') || reg.startsWith('N')) return false;
+        return true;
+      }
+
+      const cat = (ac.category || '').toUpperCase();
+      if (cat === 'A7') return true;
+
+      return false;
+    }
+
+    function renderFlightBoard(acList) {
+      const gridEl = document.getElementById('aircraft-grid');
+      if (!gridEl) return;
+
+      const currentScroll = gridEl.scrollTop;
+      gridEl.innerHTML = '';
+
+      const militaryList = acList.filter(ac => isMilitary(ac));
+
+      if (!militaryList || militaryList.length === 0) {
+        gridEl.innerHTML = '<div style="color:var(--text-dim); font-size:0.75rem; padding: 0.5rem; text-align:center;">No active military transponders within 35 NM.</div>';
+        internalScrollPos = 0;
+        return;
+      }
+
+      militaryList.forEach((ac, index) => {
+        if (!ac.lat || !ac.lon) return;
+
+        announceMilitaryAircraft(ac);
+
+        const dist = calcDistanceNM(userConfig.lat, userConfig.lon, ac.lat, ac.lon);
+        const cardId = `mil-card-${ac.hex}-${index}`;
+        const card = document.createElement('div');
+        card.className = 'ac-card';
+        card.innerHTML = `
+          <div class="ac-thumb" id="${cardId}-thumb">
+            <span style="font-size:0.55rem; color:var(--accent-military); font-weight:bold; text-align:center;">MIL</span>
+          </div>
+          <div style="flex: 1; min-width: 0;">
+            <div style="font-weight:bold; font-size:0.78rem; color:var(--accent-military); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 0 5px rgba(255,176,0,0.4);">${ac.flight ? ac.flight.trim() : ac.hex}</div>
+            <div style="font-size:0.65rem; color:var(--text-dim);">[${ac.t || 'MIL'}] • ${ac.gs || 0} kts</div>
+          </div>
+          <div style="text-align:right; flex-shrink: 0;">
+            <div style="font-weight:bold; color:var(--accent-green); font-size:0.78rem; text-shadow: 0 0 5px rgba(0,255,102,0.4);">${dist.toFixed(1)} NM</div>
+            <div style="font-size:0.65rem; color:var(--text-dim);">${ac.alt_baro || 'Ground'} ft</div>
+          </div>
+        `;
+        gridEl.appendChild(card);
+        fetchCardPhoto(ac, `${cardId}-thumb`);
+      });
+
+      gridEl.scrollTop = Math.min(currentScroll, gridEl.scrollHeight - gridEl.clientHeight);
+      internalScrollPos = gridEl.scrollTop;
+    }
+
+    function processAutoScroll() {
+      const grid = document.getElementById('aircraft-grid');
+      if (!grid) return;
+
+      const maxScroll = grid.scrollHeight - grid.clientHeight;
+
+      if (maxScroll <= 0) {
+        internalScrollPos = 0;
+        grid.scrollTop = 0;
+        return;
+      }
+
+      if (scrollState === 'PAUSED_TOP') {
+        scrollTimer--;
+        if (scrollTimer <= 0) {
+          scrollState = 'SCROLLING';
+        }
+        return;
+      }
+
+      if (scrollState === 'PAUSED_BOTTOM') {
+        scrollTimer--;
+        if (scrollTimer <= 0) {
+          internalScrollPos = 0;
+          grid.scrollTop = 0;
+          scrollState = 'PAUSED_TOP';
+          scrollTimer = 120;
+        }
+        return;
+      }
+
+      internalScrollPos += 0.35;
+      grid.scrollTop = internalScrollPos;
+
+      if (grid.scrollTop >= maxScroll - 1 || internalScrollPos >= maxScroll) {
+        scrollState = 'PAUSED_BOTTOM';
+        scrollTimer = 120;
+        internalScrollPos = maxScroll;
+        grid.scrollTop = maxScroll;
+      }
+    }
+
+    function updateNearestScrollboard(acList) {
+      if (!acList || acList.length === 0) return;
+      const validAc = acList.filter(a => a.lat && a.lon);
+      if (validAc.length === 0) return;
+
+      lockedAircraft = [...validAc].sort((a, b) => 
+        calcDistanceNM(userConfig.lat, userConfig.lon, a.lat, a.lon) - 
+        calcDistanceNM(userConfig.lat, userConfig.lon, b.lat, b.lon)
+      )[0];
+
+      const dist = calcDistanceNM(userConfig.lat, userConfig.lon, lockedAircraft.lat, lockedAircraft.lon);
+      const bearing = calcBearing(userConfig.lat, userConfig.lon, lockedAircraft.lat, lockedAircraft.lon);
+      const flightStr = lockedAircraft.flight ? lockedAircraft.flight.trim() : `ICAO: ${lockedAircraft.hex}`;
+
+      fetchAircraftPhoto(lockedAircraft, isMilitary(lockedAircraft));
+
+      const speedKts = lockedAircraft.gs !== undefined ? Math.round(lockedAircraft.gs) : 0;
+      const speedMph = Math.round(speedKts * 1.15078);
+
+      document.getElementById('sb-distance').innerText = `${dist.toFixed(1)} NM`;
+      document.getElementById('sb-alt').innerText = `Alt: ${lockedAircraft.alt_baro || 'Ground'} ft`;
+      document.getElementById('sb-speed').innerText = `Spd: ${speedKts} kts (${speedMph} mph)`;
+      document.getElementById('sb-airline').innerText = flightStr;
+      document.getElementById('sb-type').innerText = `Type: ${lockedAircraft.t || 'Aircraft'}`;
+
+      const heading = lockedAircraft.track !== undefined ? Math.round(lockedAircraft.track) : '--';
+      document.getElementById('sb-heading').innerText = `Hdng: ${heading}°`;
+      document.getElementById('sb-bearing').innerText = `Bearing: ${bearing}°`;
+      
+      const squawkCode = lockedAircraft.squawk || '----';
+      let squawkDisplay = squawkCode;
+      if (squawkCode === '7700') squawkDisplay = '7700 (EMERGENCY)';
+      else if (squawkCode === '7600') squawkDisplay = '7600 (RADIO FAIL)';
+      else if (squawkCode === '7500') squawkDisplay = '7500 (HIJACK)';
+      document.getElementById('sb-squawk').innerText = `Squawk: ${squawkDisplay}`;
+      document.getElementById('sb-hex').innerText = `Hex: ${lockedAircraft.hex || '--'}`;
+      document.getElementById('sb-reg').innerText = `Reg: ${lockedAircraft.r || 'Unassigned'}`;
+
+      const vertRate = lockedAircraft.baro_rate !== undefined ? lockedAircraft.baro_rate : 0;
+      const rateEl = document.getElementById('sb-rate');
+      if (vertRate > 30) {
+        rateEl.innerHTML = `<span style="color: var(--accent-green); text-shadow: 0 0 6px rgba(0,255,102,0.4);">▲ +${vertRate} ft/m</span>`;
+      } else if (vertRate < -30) {
+        rateEl.innerHTML = `<span style="color: var(--accent-red); text-shadow: 0 0 6px rgba(255,51,51,0.4);">▼ ${vertRate} ft/m</span>`;
+      } else {
+        rateEl.innerHTML = `<span style="color: var(--text-dim);">— Level Flight</span>`;
+      }
+
+      const route = resolveFlightRoute(flightStr, lockedAircraft);
+      document.getElementById('sb-from').innerHTML = `<b>${route.fromCode}</b> — <span style="color:var(--text-dim);">${airportDatabase[route.fromCode] || 'Aerodrome'}</span>`;
+      document.getElementById('sb-to').innerHTML = `<b>${route.toCode}</b> — <span style="color:var(--text-dim);">${airportDatabase[route.toCode] || 'Aerodrome'}</span>`;
+    }
+
+    function getSilhouetteType(typeCode) {
+      if (!typeCode) return 'airliner';
+      const t = typeCode.toUpperCase();
+      if (['F16', 'F15', 'F18', 'F35', 'F22', 'EF20', 'EUFI', 'TYPH', 'TOR', 'HAWK', 'A10'].some(s => t.includes(s))) return 'fighter';
+      if (['C17', 'C130', 'A400', 'K35R', 'KC135', 'E3TF', 'P8', 'RC135', 'B747', 'A380', 'C5'].some(s => t.includes(s))) return 'heavy';
+      if (['CH47', 'AH64', 'UH60', 'V22', 'EC35', 'R22', 'B407'].some(s => t.includes(s))) return 'helicopter';
+      return 'airliner';
+    }
+
+    function drawAircraftSilhouettePath(ctx, type) {
+      ctx.beginPath();
+      if (type === 'fighter') {
+        ctx.moveTo(0, -6);
+        ctx.lineTo(1.5, -1.5);
+        ctx.lineTo(4, 3);
+        ctx.lineTo(1, 2);
+        ctx.lineTo(1.5, 5);
+        ctx.lineTo(0, 4);
+        ctx.lineTo(-1.5, 5);
+        ctx.lineTo(-1, 2);
+        ctx.lineTo(-4, 3);
+        ctx.lineTo(-1.5, -1.5);
+      } else if (type === 'heavy') {
+        ctx.moveTo(0, -6);
+        ctx.lineTo(2, -2);
+        ctx.lineTo(5.5, 1);
+        ctx.lineTo(5.5, 2.5);
+        ctx.lineTo(1.5, 1.5);
+        ctx.lineTo(2, 5.5);
+        ctx.lineTo(0, 4);
+        ctx.lineTo(-2, 5.5);
+        ctx.lineTo(-1.5, 1.5);
+        ctx.lineTo(-5.5, 2.5);
+        ctx.lineTo(-5.5, 1);
+        ctx.lineTo(-2, -2);
+      } else if (type === 'helicopter') {
+        ctx.arc(0, 0, 3, 0, 2 * Math.PI);
+        ctx.moveTo(0, 3);
+        ctx.lineTo(0, 6);
+      } else {
+        ctx.moveTo(0, -6);
+        ctx.lineTo(1.2, -2.5);
+        ctx.lineTo(5, 0.5);
+        ctx.lineTo(5, 2);
+        ctx.lineTo(1.2, 1);
+        ctx.lineTo(1.5, 5);
+        ctx.lineTo(0, 3.5);
+        ctx.lineTo(-1.5, 5);
+        ctx.lineTo(-1.2, 1);
+        ctx.lineTo(-5, 2);
+        ctx.lineTo(-5, 0.5);
+        ctx.lineTo(-1.2, -2.5);
+      }
+      ctx.closePath();
+    }
+
+    let sweepAngle = 0;
+
+    function drawRadarScope() {
+      if (!ctx || !canvas || !map) return;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      processAutoScroll();
+
+      const centerPt = map.latLngToContainerPoint([userConfig.lat, userConfig.lon]);
+
+      const edgeLat = userConfig.lat + (userConfig.radiusNM / 60);
+      const edgePt = map.latLngToContainerPoint([edgeLat, userConfig.lon]);
+      const maxRadiusPx = Math.abs(edgePt.y - centerPt.y);
+
+      ctx.shadowColor = '#00ff66';
+      ctx.shadowBlur = 8;
+
+      ctx.strokeStyle = 'rgba(0, 255, 102, 0.35)';
+      ctx.lineWidth = 1;
+      [0.25, 0.5, 0.75, 1.0].forEach((factor) => {
+        const r = maxRadiusPx * factor;
+        ctx.beginPath();
+        ctx.arc(centerPt.x, centerPt.y, r, 0, 2 * Math.PI);
+        ctx.stroke();
+
+        ctx.fillStyle = 'rgba(0, 255, 102, 0.8)';
+        ctx.font = '9px system-ui';
+        ctx.fillText(`${(userConfig.radiusNM * factor).toFixed(0)} NM`, centerPt.x + 4, centerPt.y - r + 10);
+      });
+
+      ctx.beginPath();
+      ctx.moveTo(centerPt.x - maxRadiusPx, centerPt.y);
+      ctx.lineTo(centerPt.x + maxRadiusPx, centerPt.y);
+      ctx.moveTo(centerPt.x, centerPt.y - maxRadiusPx);
+      ctx.lineTo(centerPt.x, centerPt.y + maxRadiusPx);
+      ctx.strokeStyle = 'rgba(0, 255, 102, 0.25)';
+      ctx.stroke();
+
+      ctx.fillStyle = '#00ff66';
+      ctx.font = 'bold 11px system-ui';
+      ctx.fillText('N', centerPt.x - 4, centerPt.y - maxRadiusPx - 5);
+      ctx.fillText('S', centerPt.x - 4, centerPt.y + maxRadiusPx + 15);
+      ctx.fillText('E', centerPt.x + maxRadiusPx + 5, centerPt.y + 4);
+      ctx.fillText('W', centerPt.x - maxRadiusPx - 18, centerPt.y + 4);
+
+      sweepAngle += 0.015;
+      for (let i = 0; i < 15; i++) {
+        const trailAngle = sweepAngle - (i * 0.012);
+        const trailX = centerPt.x + Math.cos(trailAngle) * maxRadiusPx;
+        const trailY = centerPt.y + Math.sin(trailAngle) * maxRadiusPx;
+        
+        ctx.beginPath();
+        ctx.moveTo(centerPt.x, centerPt.y);
+        ctx.lineTo(trailX, trailY);
+        ctx.strokeStyle = `rgba(0, 255, 102, ${0.12 * (1 - i / 15)})`;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+
+      const sweepX = centerPt.x + Math.cos(sweepAngle) * maxRadiusPx;
+      const sweepY = centerPt.y + Math.sin(sweepAngle) * maxRadiusPx;
+      ctx.beginPath();
+      ctx.moveTo(centerPt.x, centerPt.y);
+      ctx.lineTo(sweepX, sweepY);
+      ctx.strokeStyle = 'rgba(0, 255, 102, 0.9)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      Object.keys(aircraftTrails).forEach(hex => {
+        const trail = aircraftTrails[hex];
+        if (trail.length > 1) {
+          ctx.beginPath();
+          for (let i = 0; i < trail.length; i++) {
+            const p = map.latLngToContainerPoint([trail[i].lat, trail[i].lon]);
+            if (i === 0) ctx.moveTo(p.x, p.y);
+            else ctx.lineTo(p.x, p.y);
+          }
+          ctx.strokeStyle = 'rgba(0, 191, 255, 0.3)';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+      });
+
+      if (liveAircraft && liveAircraft.length > 0) {
+        liveAircraft.forEach(ac => {
+          if (!ac.lat || !ac.lon) return;
+          
+          const pt = map.latLngToContainerPoint([ac.lat, ac.lon]);
+          const isMil = isMilitary(ac);
+          const isEmg = ac.squawk === '7500' || ac.squawk === '7600' || ac.squawk === '7700';
+          const isLocked = lockedAircraft && lockedAircraft.hex === ac.hex;
+
+          if (isLocked) {
+            const pulseRadius = 12 + Math.sin(Date.now() / 150) * 3;
+            ctx.beginPath();
+            ctx.arc(pt.x, pt.y, pulseRadius, 0, 2 * Math.PI);
+            ctx.strokeStyle = '#ff3333';
+            ctx.lineWidth = 2;
+            ctx.shadowColor = '#ff3333';
+            ctx.shadowBlur = 10;
+            ctx.stroke();
+            ctx.shadowColor = '#00ff66';
+            ctx.shadowBlur = 8;
+          }
+
+          if (ac.track !== undefined) {
+            const trackRad = (ac.track - 90) * (Math.PI / 180);
+            const lineLen = 16;
+            const endX = pt.x + Math.cos(trackRad) * lineLen;
+            const endY = pt.y + Math.sin(trackRad) * lineLen;
+            ctx.beginPath();
+            ctx.moveTo(pt.x, pt.y);
+            ctx.lineTo(endX, endY);
+            ctx.strokeStyle = isMil ? '#ffb000' : '#00bfff';
+            ctx.lineWidth = 1.2;
+            ctx.stroke();
+          }
+
+          ctx.save();
+          ctx.translate(pt.x, pt.y);
+          const heading = ac.track !== undefined ? ac.track : 0;
+          ctx.rotate((heading * Math.PI) / 180);
+
+          const silhouetteType = getSilhouetteType(ac.t);
+          drawAircraftSilhouettePath(ctx, silhouetteType);
+
+          ctx.fillStyle = isEmg ? '#ff3333' : (isMil ? '#ffb000' : '#00ff66');
+          ctx.fill();
+          ctx.lineWidth = 0.8;
+          ctx.strokeStyle = '#020704';
+          ctx.stroke();
+          ctx.restore();
+
+          ctx.fillStyle = isMil ? '#ffb000' : '#00ff66';
+          ctx.font = 'bold 9px system-ui';
+          const label = ac.flight ? ac.flight.trim() : ac.hex;
+          const altText = ac.alt_baro ? ` FL${Math.round(ac.alt_baro / 100)}` : '';
+          ctx.fillText(`${label}${altText}`, pt.x + 8, pt.y + 3);
+        });
+      }
+
+      requestAnimationFrame(drawRadarScope);
+    }
+
+    window.addEventListener('load', () => {
+      canvas = document.getElementById('radarCanvas');
+      ctx = canvas.getContext('2d');
+
+      initKioskAudio();
+      initMap();
+      resizeCanvas();
+      window.addEventListener('resize', resizeCanvas);
+      
+      requestAnimationFrame(drawRadarScope);
+      fetchLiveFlights();
+      setInterval(fetchLiveFlights, 12000);
+    });
+  </script>
 </body>
 </html>
