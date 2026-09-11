@@ -320,6 +320,16 @@
       border-right: 1px solid rgba(15, 56, 31, 0.6);
     }
 
+    /* The flight-info column's content (callsign, type, from/to) rarely needs a full equal
+       third of the bar - giving it flex:1 1 0 like the metric columns left a dead gap between
+       the text and the next box's border. Let it size to its own content instead (within
+       sensible bounds) so the metric-group boxes shift left and sit right up against it. */
+    .banner-col-info {
+      flex: 0 1 auto;
+      min-width: 260px;
+      max-width: 50%;
+    }
+
     .banner-col:last-child {
       border-right: none;
     }
@@ -464,7 +474,7 @@
         <span class="logo-fallback" id="sb-logo-text">--</span>
       </div>
 
-      <div class="banner-col">
+      <div class="banner-col banner-col-info">
         <div id="sb-airline" class="airline-heading">AWAITING LOCK</div>
         <div id="sb-type" class="aircraft-meta">Type: --</div>
         <div class="route-container" id="sb-route-container">
@@ -1376,12 +1386,51 @@
       }
     }
 
-    function getSilhouetteType(typeCode) {
-      if (!typeCode) return 'airliner';
-      const t = typeCode.toUpperCase();
+    // Finer-grained classification, closer to what ADS-B Exchange / tar1090 does: rather than
+    // lumping everything non-military into one "airliner" glyph, split by airframe class so the
+    // scope reads at a glance (widebody vs narrowbody vs regional jet vs turboprop vs GA single
+    // vs biz jet vs glider), in addition to the existing fighter/heavy-mil/helicopter buckets.
+    function getSilhouetteType(typeCode, category) {
+      const t = (typeCode || '').toUpperCase();
+      const cat = (category || '').toUpperCase();
+
       if (['F16', 'F15', 'F18', 'F35', 'F22', 'EF20', 'EUFI', 'TYPH', 'TOR', 'HAWK', 'A10'].some(s => t.includes(s))) return 'fighter';
-      if (['C17', 'C130', 'A400', 'K35R', 'KC135', 'E3TF', 'P8', 'RC135', 'B747', 'A380', 'C5'].some(s => t.includes(s))) return 'heavy';
-      if (['CH47', 'AH64', 'UH60', 'V22', 'EC35', 'R22', 'B407'].some(s => t.includes(s))) return 'helicopter';
+
+      if (['CH47', 'AH64', 'UH60', 'V22', 'EC35', 'EC45', 'AS35', 'AS50', 'R22', 'R44', 'B407', 'B206', 'H125', 'H135', 'NH90'].some(s => t.includes(s))) return 'helicopter';
+      if (cat === 'A7') return 'helicopter';
+
+      // Military heavies (transports/tankers/AWACS) and civil widebodies both read as "heavy"
+      // on scope - big fuselage, four-abreast wing swept further back, wider tail.
+      const heavyTypes = [
+        'C17', 'C130', 'A400', 'K35R', 'KC135', 'KC10', 'KC46', 'E3TF', 'E3', 'P8', 'RC135', 'C5',
+        'B742', 'B743', 'B744', 'B748', 'A388', // 747 / A380
+        'B772', 'B773', 'B77L', 'B77W', 'B788', 'B789', 'B78X', // 777 / 787
+        'A332', 'A333', 'A338', 'A339', 'A342', 'A343', 'A345', 'A346', 'A359', 'A35K', // A330/340/350
+        'MD11', 'IL76', 'IL96'
+      ];
+      if (heavyTypes.some(s => (s === 'C17' ? (t === 'C17' || t === 'C-17') : t.includes(s)))) return 'heavy';
+
+      // Regional jets - smaller swept-wing twins, shorter fuselage than a narrowbody airliner.
+      const regionalTypes = ['CRJ1', 'CRJ2', 'CRJ7', 'CRJ9', 'CRJX', 'E135', 'E145', 'E170', 'E175', 'E190', 'E195', 'ERJ1', 'ERJ4', 'SU95', 'F70', 'F100'];
+      if (regionalTypes.some(s => t.includes(s))) return 'regional';
+
+      // Business jets - small sleek jets, short/straight-ish wings, no widebody presence.
+      const bizjetTypes = ['C25A', 'C25B', 'C25C', 'C550', 'C56X', 'C680', 'C700', 'C750', 'GLF4', 'GLF5', 'GLF6', 'GLEX', 'CL30', 'CL35', 'FA7X', 'FA8X', 'F900', 'LJ35', 'LJ45', 'LJ60', 'E50P', 'E55P', 'E545', 'E550', 'H25B', 'PRM1'];
+      if (bizjetTypes.some(s => t.includes(s))) return 'bizjet';
+
+      // Twin turboprops - straight wings, visible engine nacelles, stubbier fuselage.
+      const turbopropTypes = ['AT43', 'AT45', 'AT72', 'AT75', 'AT76', 'DH8A', 'DH8B', 'DH8C', 'DH8D', 'SF34', 'B350', 'BE20', 'BE30', 'BE9L', 'JS41', 'JS32', 'SW4', 'D328', 'DHC6', 'MU2', 'F27', 'F50'];
+      if (turbopropTypes.some(s => t.includes(s))) return 'turboprop';
+
+      // Single-engine GA / light singles (incl. single-turboprop like PC12/TBM/C208).
+      const singlepropTypes = ['C172', 'C152', 'C182', 'C206', 'PA28', 'PA34', 'PA46', 'SR20', 'SR22', 'DA40', 'DA42', 'DA62', 'M20P', 'M20T', 'BE36', 'BE33', 'PC12', 'TBM8', 'TBM9', 'C208', 'GA8'];
+      if (singlepropTypes.some(s => t.includes(s))) return 'singleprop';
+
+      const gliderTypes = ['GLID', 'ASK21', 'ASW', 'DG40', 'DG80', 'LS8', 'LS6', 'VENT'];
+      if (gliderTypes.some(s => t.includes(s))) return 'glider';
+
+      // Everything else defaults to narrowbody jet (737/A320-family territory) - the most
+      // common shape in normal airspace, and a sane fallback when the type code is unknown.
       return 'airliner';
     }
 
@@ -1415,7 +1464,83 @@
         ctx.arc(0, 0, 3, 0, 2 * Math.PI);
         ctx.moveTo(0, 3);
         ctx.lineTo(0, 6);
+      } else if (type === 'regional') {
+        // Same swept-wing family as the narrowbody shape, scaled down (shorter fuselage,
+        // shorter wingspan) so it reads visibly smaller on scope next to an airliner.
+        ctx.moveTo(0, -5);
+        ctx.lineTo(1, -2);
+        ctx.lineTo(3.6, 0.5);
+        ctx.lineTo(3.6, 1.6);
+        ctx.lineTo(1, 0.8);
+        ctx.lineTo(1.2, 4);
+        ctx.lineTo(0, 3);
+        ctx.lineTo(-1.2, 4);
+        ctx.lineTo(-1, 0.8);
+        ctx.lineTo(-3.6, 1.6);
+        ctx.lineTo(-3.6, 0.5);
+        ctx.lineTo(-1, -2);
+      } else if (type === 'bizjet') {
+        // Small, sleek: pointed nose, short straight-ish wings set well aft, narrow tail.
+        ctx.moveTo(0, -5.5);
+        ctx.lineTo(0.7, -1.5);
+        ctx.lineTo(3, 1);
+        ctx.lineTo(3, 1.9);
+        ctx.lineTo(0.7, 1.1);
+        ctx.lineTo(0.9, 4.2);
+        ctx.lineTo(0, 3.2);
+        ctx.lineTo(-0.9, 4.2);
+        ctx.lineTo(-0.7, 1.1);
+        ctx.lineTo(-3, 1.9);
+        ctx.lineTo(-3, 1);
+        ctx.lineTo(-0.7, -1.5);
+      } else if (type === 'turboprop') {
+        // Straight (unswept) wings with a small nacelle bump, boxier/stubbier fuselage.
+        ctx.moveTo(0, -5);
+        ctx.lineTo(0.9, -1);
+        ctx.lineTo(4.5, -1);
+        ctx.lineTo(4.5, 0.4);
+        ctx.lineTo(1.6, 0.6);
+        ctx.lineTo(1.4, 1.2);
+        ctx.lineTo(2.2, 1.2);
+        ctx.lineTo(1, 3.8);
+        ctx.lineTo(0, 3);
+        ctx.lineTo(-1, 3.8);
+        ctx.lineTo(-2.2, 1.2);
+        ctx.lineTo(-1.4, 1.2);
+        ctx.lineTo(-1.6, 0.6);
+        ctx.lineTo(-4.5, 0.4);
+        ctx.lineTo(-4.5, -1);
+        ctx.lineTo(-0.9, -1);
+      } else if (type === 'singleprop') {
+        // Small GA single: single wide straight wing, small tail, short blunt nose.
+        ctx.moveTo(0, -4);
+        ctx.lineTo(0.7, -1.2);
+        ctx.lineTo(4.2, 0.2);
+        ctx.lineTo(4.2, 1);
+        ctx.lineTo(0.7, 0.2);
+        ctx.lineTo(0.8, 3.6);
+        ctx.lineTo(0, 2.8);
+        ctx.lineTo(-0.8, 3.6);
+        ctx.lineTo(-0.7, 0.2);
+        ctx.lineTo(-4.2, 1);
+        ctx.lineTo(-4.2, 0.2);
+        ctx.lineTo(-0.7, -1.2);
+      } else if (type === 'glider') {
+        // Very long, thin, unswept wings and a slender fuselage - no engine bulk anywhere.
+        ctx.moveTo(0, -4.5);
+        ctx.lineTo(0.5, -0.5);
+        ctx.lineTo(6, 0.3);
+        ctx.lineTo(6, 0.8);
+        ctx.lineTo(0.5, 0.6);
+        ctx.lineTo(0.6, 4);
+        ctx.lineTo(0, 3.2);
+        ctx.lineTo(-0.6, 4);
+        ctx.lineTo(-0.5, 0.6);
+        ctx.lineTo(-6, 0.8);
+        ctx.lineTo(-6, 0.3);
+        ctx.lineTo(-0.5, -0.5);
       } else {
+        // Default narrowbody jet (737/A320-family shape).
         ctx.moveTo(0, -6);
         ctx.lineTo(1.2, -2.5);
         ctx.lineTo(5, 0.5);
@@ -1555,7 +1680,7 @@
           const heading = ac.track !== undefined ? ac.track : 0;
           ctx.rotate((heading * Math.PI) / 180);
 
-          const silhouetteType = getSilhouetteType(ac.t);
+          const silhouetteType = getSilhouetteType(ac.t, ac.category);
           drawAircraftSilhouettePath(ctx, silhouetteType);
 
           ctx.fillStyle = isEmg ? '#ff3333' : (isMil ? '#ffb000' : '#00ff66');
