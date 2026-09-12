@@ -2490,11 +2490,27 @@
             ctx.restore();
           }
 
-          ctx.fillStyle = isEmg ? '#ff3333' : (isQra || isMil ? '#ffb000' : '#b266ff');
           ctx.font = 'bold 12px system-ui';
           const label = ac.flight ? ac.flight.trim() : ac.hex;
           const altText = ac.alt_baro ? ` FL${Math.round(ac.alt_baro / 100)}` : '';
-          ctx.fillText(`${label}${altText}`, pt.x + 8, pt.y + 3);
+          const labelText = `${label}${altText}`;
+
+          // Faded white backing box behind the callsign/altitude label so it stays readable
+          // against the scope regardless of what colour/brightness is under it (trails, sweep
+          // glow, other blips). Sized from measureText + the font's cap-height rather than a
+          // fixed box, so it fits labels of any length.
+          const labelMetrics = ctx.measureText(labelText);
+          const labelPadX = 3;
+          const labelPadY = 2;
+          const labelBoxX = pt.x + 8 - labelPadX;
+          const labelBoxY = pt.y + 3 - 9 - labelPadY;
+          const labelBoxW = labelMetrics.width + labelPadX * 2;
+          const labelBoxH = 12 + labelPadY * 2;
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+          ctx.fillRect(labelBoxX, labelBoxY, labelBoxW, labelBoxH);
+
+          ctx.fillStyle = isEmg ? '#ff3333' : (isQra || isMil ? '#ffb000' : '#b266ff');
+          ctx.fillText(labelText, pt.x + 8, pt.y + 3);
 
           ctx.restore(); // matches the fadeAlpha save() above
         });
