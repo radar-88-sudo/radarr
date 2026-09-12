@@ -691,7 +691,7 @@
             jsonPaths.add(entry.path);
           }
         });
-        console.debug(`[pw-silhouettes] repo tree loaded (${svgByName.size} svg files, ${jsonPaths.size} json files)`);
+        console.log(`[pw-silhouettes] repo tree loaded (${svgByName.size} svg files, ${jsonPaths.size} json files)`);
         return { svgByName, jsonPaths };
       })().catch(err => {
         console.warn('[pw-silhouettes] failed to load repo file tree -', err);
@@ -749,7 +749,7 @@
           if (svgByName.has(refBase)) return `${PW_RAW_BASE}/${svgByName.get(refBase)}`;
           return `${PW_RAW_BASE}/${ref.replace(/^\/+/, '')}`;
         } catch (err) {
-          console.debug(`[pw-silhouettes] metadata lookup failed for ${candidate} -`, err);
+          console.log(`[pw-silhouettes] metadata lookup failed for ${candidate} -`, err);
         }
       }
       return null;
@@ -809,7 +809,7 @@
         URL.revokeObjectURL(blobUrl);
         pwSilhouetteCache.set(cacheKey, image);
       } catch (err) {
-        console.debug(`[pw-silhouettes] failed to load silhouette for ${key} -`, err);
+        console.log(`[pw-silhouettes] failed to load silhouette for ${key} -`, err);
         pwSilhouetteCache.set(cacheKey, null);
       }
     }
@@ -1181,10 +1181,21 @@
     // coordinates (e.g. a registration-override flavour route, or a heuristic guess whose
     // airport code isn't in our small local table) or a usable ground speed.
     function computeEtaText(ac, route) {
-      if (!route) return '--';
+      if (!route) { console.log('[ETA] no route object at all for', ac.flight || ac.hex); return '--'; }
       const destCoords = getDestinationCoords(route);
       const speedKts = ac.gs;
-      if (!destCoords || !speedKts || speedKts <= 0) return '--';
+      if (!destCoords || !speedKts || speedKts <= 0) {
+        console.log('[ETA] blocked -', {
+          callsign: ac.flight || ac.hex,
+          routeSource: route.source,
+          toCode: route.toCode,
+          toLat: route.toLat,
+          toLon: route.toLon,
+          destCoordsResolved: !!destCoords,
+          gs: ac.gs
+        });
+        return '--';
+      }
       const distNM = calcDistanceNM(ac.lat, ac.lon, destCoords.lat, destCoords.lon);
       const hoursRemaining = distNM / speedKts;
       if (!isFinite(hoursRemaining) || hoursRemaining <= 0) return '--';
@@ -1789,7 +1800,7 @@
           if (oldLayer) map.removeLayer(oldLayer);
         });
       } catch (err) {
-        console.debug('[weather] failed to refresh radar overlay -', err);
+        console.log('[weather] failed to refresh radar overlay -', err);
       }
     }
 
@@ -2290,6 +2301,9 @@
       // give us one (see aircraftFirstSeenAt). Ticks forward every second between polls too -
       // see tickFlightTimeDisplay().
       const firstSeenAt = aircraftFirstSeenAt[lockedAircraft.hex];
+      if (!firstSeenAt) {
+        console.log('[FLIGHT TIME] no firstSeenAt entry for hex', lockedAircraft.hex, '- known hexes:', Object.keys(aircraftFirstSeenAt));
+      }
       document.getElementById('sb-flight-time').innerText = `Flight Time: ${firstSeenAt ? formatDuration(Date.now() - firstSeenAt) : '--'}`;
 
       const airlineEl = document.getElementById('sb-airline');
