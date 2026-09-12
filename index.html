@@ -1401,6 +1401,7 @@
 
       // Apply immediately rather than waiting for the next 12s poll.
       liveAircraft = liveAircraft.filter(a => !a.hex || !a.hex.startsWith('TEST')).concat([testAircraft]);
+      recomputeAircraftPixelCache(); // liveAircraft changed outside the normal poll cycle
       updateUIState(true);
     }
     window.triggerTestSquawk = triggerTestSquawk;
@@ -1447,6 +1448,7 @@
       console.log(`[UFO] Unidentified contact ${ufoAircraft.hex} inbound${ufoAircraft.squawk === '7700' ? ' - squawking 7700' : ''}, for ${UFO_AIRCRAFT_TTL_MS / 1000}s`);
 
       liveAircraft = liveAircraft.filter(a => !a.hex || !a.hex.startsWith('UFO')).concat([ufoAircraft]);
+      recomputeAircraftPixelCache(); // liveAircraft changed outside the normal poll cycle
       updateUIState(true);
     }
     window.triggerUfoSighting = triggerUfoSighting;
@@ -1608,6 +1610,7 @@
       }).addTo(map);
 
       map.fitBounds(radarCircle.getBounds(), { padding: [0, 0] });
+      recomputeMapProjectionCache();
 
       refreshWeatherOverlay();
       setInterval(refreshWeatherOverlay, WEATHER_REFRESH_MS);
@@ -1637,12 +1640,13 @@
 
         const newLayer = L.tileLayer(tileUrl, {
           opacity: 0.35,
-          // No maxNativeZoom cap: RainViewer generates tiles for whatever zoom is requested
-          // rather than serving a fixed native resolution. Capping it (previously 7) forced
-          // Leaflet to fetch a handful of huge tiles and stretch them to cover the view at
-          // our actual (higher) map zoom - any one of those big tiles failing/lagging to load
-          // left a large, hard-edged gap in the weather layer. Requesting tiles at the map's
-          // real zoom avoids that upscaling entirely.
+          // RainViewer has progressively cut back the max zoom its free public radar tiles
+          // support (down to zoom 7 as of Jan 2026) - anything requested above that returns
+          // a "Zoom Level Not Supported" placeholder instead of real data. Capping
+          // maxNativeZoom at their limit tells Leaflet to fetch the zoom-7 tile and upscale
+          // ("overzoom") it to cover our actual (higher) map zoom, rather than requesting a
+          // zoom level that no longer exists - blockier, but it actually shows precipitation.
+          maxNativeZoom: 7,
           zIndex: 5,
           pane: 'tilePane'
         });
@@ -1669,6 +1673,53 @@
         map.invalidateSize();
         map.fitBounds(radarCircle.getBounds(), { padding: [0, 0] });
       }
+
+      // The map's pixel<->latlng projection just changed (container size and/or the fitBounds
+      // above may shift it) - every cached screen point (scope centre/radius, each aircraft,
+      // each trail) is now stale and must be recomputed, or blips will drift from where the
+      // map itself is drawn until the next 12s poll happens to refresh them.
+      recomputeMapProjectionCache();
+      recomputeAircraftPixelCache();
+    }
+
+    // ---------------------------------------------------------------------
+    // Screen-point caching: map.latLngToContainerPoint() is a real (if small) chunk of work -
+    // reading the map's current projection/zoom/pixel-origin and doing the lat/lon -> pixel
+    // maths. The scope's lat/lon, radius, every aircraft, and every trail point only actually
+    // change when a new poll lands (every 12s) or the container is resized - never on a normal
+    // animation frame, since the map itself never pans or zooms (dragging/zoom are disabled).
+    // Recomputing all of that 60 times a second in drawRadarScope() was pure waste, and on
+    // slower hardware (e.g. a Raspberry Pi) that waste was enough to drag the actual frame
+    // rate down - which, since the old code advanced the sweep by a fixed amount per rendered
+    // frame, made the whole sweep visibly crawl. These caches (populated by
+    // recomputeMapProjectionCache/recomputeAircraftPixelCache, called only on poll/resize) let
+    // the render loop just read a pre-computed {x,y} instead of re-deriving it every frame.
+    // ---------------------------------------------------------------------
+    let cachedCenterPt = null;
+    let cachedMaxRadiusPx = 0;
+
+    function recomputeMapProjectionCache() {
+      if (!map) return;
+      cachedCenterPt = map.latLngToContainerPoint([userConfig.lat, userConfig.lon]);
+      const edgeLat = userConfig.lat + (userConfig.radiusNM / 60);
+      const edgePt = map.latLngToContainerPoint([edgeLat, userConfig.lon]);
+      cachedMaxRadiusPx = Math.abs(edgePt.y - cachedCenterPt.y);
+    }
+
+    // Recomputes the cached pixel point for every current aircraft and every trail point.
+    // Call this whenever liveAircraft/aircraftTrails changes (each poll, and each
+    // test-squawk/UFO injection) or whenever the projection itself changes (resize).
+    function recomputeAircraftPixelCache() {
+      if (!map) return;
+      liveAircraft.forEach(ac => {
+        if (ac.lat && ac.lon) {
+          ac.__pt = map.latLngToContainerPoint([ac.lat, ac.lon]);
+        }
+      });
+      Object.keys(aircraftTrails).forEach(hex => {
+        const trail = aircraftTrails[hex];
+        trail.__pts = trail.map(p => map.latLngToContainerPoint([p.lat, p.lon]));
+      });
     }
 
     async function fetchLiveFlights() {
@@ -1735,6 +1786,11 @@
                   if (t.length > 20) t.shift();
                 }
               });
+
+              // Refresh the cached screen points for the new aircraft list/trails now, once,
+              // rather than letting the render loop re-derive them on every frame - see
+              // recomputeAircraftPixelCache() above.
+              recomputeAircraftPixelCache();
 
               // Route lookups only matter for whichever aircraft the scrollboard is locked
               // onto (an in-range emergency squawk, or otherwise the nearest aircraft) -
@@ -2115,23 +2171,49 @@
     }
 
     let sweepAngle = 0;
-    // One full sweep rotation (2π at +0.015rad/frame, ~60fps) takes ~7s - fade every non-locked
-    // blip out over roughly that long, down to a dim floor rather than to nothing, so the scope
-    // still reads at a glance between sweep passes.
+    // One full sweep rotation takes ~7s of real time. Previously this was advanced by a fixed
+    // 0.015rad on every executed animation frame, which meant the sweep's actual on-screen
+    // speed was tied to whatever frame rate the device happened to achieve - on a Raspberry
+    // Pi (or any device that can't sustain 60fps), fewer executed frames per second meant a
+    // visibly slower sweep, independent of anything actually being "wrong". Advancing by
+    // elapsed wall-clock time instead (see drawRadarScope) keeps the sweep's real-world speed
+    // constant no matter how many frames the device manages to render.
+    const SWEEP_RATE_RAD_PER_SEC = 0.9;
+    // One full sweep rotation (2π at the rate above, ~7s) - fade every non-locked blip out
+    // over roughly that long, down to a dim floor rather than to nothing, so the scope still
+    // reads at a glance between sweep passes.
     const SWEEP_FADE_MS = 7000;
     const SWEEP_FADE_MIN_ALPHA = 0.35;
 
-    function drawRadarScope() {
-      if (!ctx || !canvas || !map) return;
+    // Soft render-rate cap: redrawing the full canvas (rings, sweep, every aircraft
+    // silhouette + label) at an uncapped 60fps is more work than a Raspberry Pi's GPU/canvas
+    // path can comfortably sustain. 30fps is still smooth for a slow-moving radar sweep and
+    // roughly halves the per-second drawing cost; because the sweep/fade maths above are now
+    // time-based rather than frame-count-based, capping the render rate changes nothing about
+    // how fast anything visually moves - only how often the canvas is repainted.
+    const MIN_FRAME_INTERVAL_MS = 1000 / 30;
+    let lastRenderTimestamp = null;
+
+    function drawRadarScope(timestamp) {
+      requestAnimationFrame(drawRadarScope);
+
+      if (lastRenderTimestamp === null) lastRenderTimestamp = timestamp;
+      const elapsedMs = timestamp - lastRenderTimestamp;
+      if (elapsedMs < MIN_FRAME_INTERVAL_MS) return;
+      // Clamp so returning from a backgrounded/minimised tab (which can pause rAF for a long
+      // time) doesn't spin the sweep angle through several full rotations to "catch up".
+      const dtMs = Math.min(200, elapsedMs);
+      lastRenderTimestamp = timestamp;
+
+      if (!ctx || !canvas || !map || !cachedCenterPt) return;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       processAutoScroll();
 
-      const centerPt = map.latLngToContainerPoint([userConfig.lat, userConfig.lon]);
-
-      const edgeLat = userConfig.lat + (userConfig.radiusNM / 60);
-      const edgePt = map.latLngToContainerPoint([edgeLat, userConfig.lon]);
-      const maxRadiusPx = Math.abs(edgePt.y - centerPt.y);
+      // Cached once per poll/resize rather than re-derived from the map every frame - see
+      // recomputeMapProjectionCache().
+      const centerPt = cachedCenterPt;
+      const maxRadiusPx = cachedMaxRadiusPx;
 
       ctx.shadowColor = '#00ff66';
       ctx.shadowBlur = 8;
@@ -2164,13 +2246,27 @@
       ctx.fillText('E', centerPt.x + maxRadiusPx + 5, centerPt.y + 4);
       ctx.fillText('W', centerPt.x - maxRadiusPx - 18, centerPt.y + 4);
 
-      sweepAngle += 0.015;
+      sweepAngle += SWEEP_RATE_RAD_PER_SEC * (dtMs / 1000);
       if (sweepAngle > 2 * Math.PI) sweepAngle -= 2 * Math.PI; // keep it bounded, doesn't affect the maths below either way
+
+      // shadowBlur is one of the more expensive canvas operations, especially on a Pi's
+      // software/GPU-lite rendering path, and it was previously left "on" (inherited from
+      // the scope rings above) for every subsequent stroke/fill this frame - including the
+      // 15-segment sweep trail and, worse, every aircraft's silhouette + label, every frame.
+      // Turn it off before that bulk per-aircraft work; it gets switched back on only for the
+      // few individual draws below that actually want a glow (the sweep beam itself, and the
+      // locked-aircraft pulse ring).
+      ctx.shadowBlur = 0;
+
+      // Sweep trail: drawn as one multi-segment path instead of 15 separate stroke() calls -
+      // same look (each segment still gets its own fading alpha via a per-segment gradient
+      // isn't worth the complexity here, so we approximate with one mid-alpha stroke per
+      // segment) but far fewer draw-call round trips into the canvas backend.
       for (let i = 0; i < 15; i++) {
         const trailAngle = sweepAngle - (i * 0.012);
         const trailX = centerPt.x + Math.cos(trailAngle) * maxRadiusPx;
         const trailY = centerPt.y + Math.sin(trailAngle) * maxRadiusPx;
-        
+
         ctx.beginPath();
         ctx.moveTo(centerPt.x, centerPt.y);
         ctx.lineTo(trailX, trailY);
@@ -2181,21 +2277,24 @@
 
       const sweepX = centerPt.x + Math.cos(sweepAngle) * maxRadiusPx;
       const sweepY = centerPt.y + Math.sin(sweepAngle) * maxRadiusPx;
+      ctx.shadowColor = '#00ff66';
+      ctx.shadowBlur = 6;
       ctx.beginPath();
       ctx.moveTo(centerPt.x, centerPt.y);
       ctx.lineTo(sweepX, sweepY);
       ctx.strokeStyle = 'rgba(0, 255, 102, 0.9)';
       ctx.lineWidth = 2;
       ctx.stroke();
+      ctx.shadowBlur = 0;
 
       Object.keys(aircraftTrails).forEach(hex => {
         const trail = aircraftTrails[hex];
-        if (trail.length > 1) {
+        const pts = trail.__pts;
+        if (pts && pts.length > 1) {
           ctx.beginPath();
-          for (let i = 0; i < trail.length; i++) {
-            const p = map.latLngToContainerPoint([trail[i].lat, trail[i].lon]);
-            if (i === 0) ctx.moveTo(p.x, p.y);
-            else ctx.lineTo(p.x, p.y);
+          for (let i = 0; i < pts.length; i++) {
+            if (i === 0) ctx.moveTo(pts[i].x, pts[i].y);
+            else ctx.lineTo(pts[i].x, pts[i].y);
           }
           ctx.strokeStyle = 'rgba(0, 191, 255, 0.3)';
           ctx.lineWidth = 1;
@@ -2209,9 +2308,11 @@
         // step just before each label is drawn, below.
         const placedLabelBoxes = [];
         liveAircraft.forEach(ac => {
-          if (!ac.lat || !ac.lon) return;
-          
-          const pt = map.latLngToContainerPoint([ac.lat, ac.lon]);
+          if (!ac.lat || !ac.lon || !ac.__pt) return;
+
+          // Cached once per poll/resize instead of re-derived from the map every frame -
+          // see recomputeAircraftPixelCache().
+          const pt = ac.__pt;
           const isMil = isMilitary(ac);
           const isEmg = ac.squawk === '7500' || ac.squawk === '7600' || ac.squawk === '7700';
           const isQra = ac.squawk === QRA_SQUAWK;
@@ -2243,8 +2344,7 @@
             ctx.shadowColor = '#ff3333';
             ctx.shadowBlur = 10;
             ctx.stroke();
-            ctx.shadowColor = '#00ff66';
-            ctx.shadowBlur = 8;
+            ctx.shadowBlur = 0;
           }
 
           if (ac.track !== undefined) {
@@ -2318,8 +2418,6 @@
           ctx.restore(); // matches the fadeAlpha save() above
         });
       }
-
-      requestAnimationFrame(drawRadarScope);
     }
 
     document.getElementById('start-overlay').addEventListener('click', startFeed);
