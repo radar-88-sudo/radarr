@@ -2490,8 +2490,8 @@
             ctx.restore();
           }
 
-          ctx.fillStyle = isEmg ? '#ff3333' : (isQra || isMil ? '#ffb000' : '#3a7bff');
-          ctx.font = 'bold 9px system-ui';
+          ctx.fillStyle = isEmg ? '#ff3333' : (isQra || isMil ? '#ffb000' : '#b266ff');
+          ctx.font = 'bold 12px system-ui';
           const label = ac.flight ? ac.flight.trim() : ac.hex;
           const altText = ac.alt_baro ? ` FL${Math.round(ac.alt_baro / 100)}` : '';
           ctx.fillText(`${label}${altText}`, pt.x + 8, pt.y + 3);
