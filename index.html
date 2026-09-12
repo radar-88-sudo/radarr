@@ -2491,18 +2491,18 @@
           }
 
           ctx.globalAlpha = fadeAlpha;
-          ctx.font = 'bold 12px system-ui';
+          ctx.font = 'bold 9px system-ui';
           const label = ac.flight ? ac.flight.trim() : ac.hex;
           const altText = ac.alt_baro ? ` FL${Math.round(ac.alt_baro / 100)}` : '';
           const labelText = `${label}${altText}`;
 
           const labelMetrics = ctx.measureText(labelText);
-          const labelPadX = 3;
-          const labelPadY = 2;
+          const labelPadX = 2;
+          const labelPadY = 1;
           const labelBoxW = labelMetrics.width + labelPadX * 2;
-          const labelBoxH = 12 + labelPadY * 2;
-          let labelBoxX = pt.x + 8 - labelPadX;
-          let labelBoxY = pt.y + 3 - 9 - labelPadY;
+          const labelBoxH = 9 + labelPadY * 2;
+          let labelBoxX = pt.x + 7 - labelPadX;
+          let labelBoxY = pt.y + 3 - 7 - labelPadY;
 
           // Nudge this label down, a row at a time, until it clears every box already
           // placed this frame - so two aircraft close together on screen get readable,
@@ -2528,7 +2528,7 @@
           ctx.fillRect(labelBoxX, labelBoxY, labelBoxW, labelBoxH);
 
           ctx.fillStyle = isEmg ? '#ff3333' : (isQra || isMil ? '#ffb000' : '#b266ff');
-          ctx.fillText(labelText, labelBoxX + labelPadX, labelBoxY + labelBoxH - labelPadY - 3);
+          ctx.fillText(labelText, labelBoxX + labelPadX, labelBoxY + labelBoxH - labelPadY - 2);
 
           ctx.restore(); // matches the fadeAlpha save() above
         });
