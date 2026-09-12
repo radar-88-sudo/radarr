@@ -1,99 +1,53 @@
-#!/usr/bin/env bash
-#
-# update-pw-silhouettes.sh
-#
-# Pulls the latest release of plane-watch/pw-silhouettes (spritesheet.png +
-# spritesheet.json) and installs it into ./pw-silhouettes/, next to index.html.
-#
-# WHY THIS IS A SEPARATE SCRIPT AND NOT DONE IN THE BROWSER:
-# GitHub does not send Access-Control-Allow-Origin headers on release assets
-# (neither on the github.com/.../releases/download/... redirect nor on the
-# release-assets.githubusercontent.com host it redirects to), so a browser
-# fetch() for these files is blocked by CORS no matter how it's written.
-# Running from a shell sidesteps that entirely - curl isn't subject to CORS,
-# only browsers enforce it.
-#
-# USAGE:
-#   Primary: run inside .github/workflows/update-pw-silhouettes.yml, which
-#   invokes this on GitHub's own runner and commits the result back into the
-#   repo - that's what makes GitHub Pages pick up the refreshed sheet.
-#
-#   Also runnable by hand (e.g. locally, right after cloning) or from your own
-#   cron if you're hosting this somewhere other than Pages:
-#     ./update-pw-silhouettes.sh [/path/to/site/dir]
-#       (defaults to the directory this script lives in)
-#
-# Requires: curl, python3 (both present by default on Raspberry Pi OS).
-# Exits non-zero on any failure and leaves the existing spritesheet in place
-# untouched - a failed refresh should never take the radar display down.
+name: Update pw-silhouettes spritesheet
 
-set -euo pipefail
+# Keeps pw-silhouettes/spritesheet.png + spritesheet.json current with the latest
+# plane-watch/pw-silhouettes release, without ever needing the browser to fetch them
+# (GitHub sends no Access-Control-Allow-Origin on release assets, so that path is
+# blocked by CORS - see the comment above PW_SPRITESHEET_PNG_PATH in index.html).
+# This runs update-pw-silhouettes.sh inside GitHub's own runner instead: that's a
+# server-to-server curl, which isn't subject to CORS at all, and if the sheet
+# actually changed it commits the update straight back into this repo - which is
+# what makes GitHub Pages pick it up and redeploy.
 
-REPO="plane-watch/pw-silhouettes"
-API_URL="https://api.github.com/repos/${REPO}/releases/latest"
+on:
+  schedule:
+    # Weekly, Sunday 03:17 UTC - not on the hour, so it doesn't pile up with the herd
+    # of jobs everyone else schedules for :00. Adjust to taste.
+    - cron: '17 3 * * 0'
+  # Lets you trigger a refresh on demand from the Actions tab instead of waiting for
+  # the schedule - handy right after this workflow is first added, or after a new
+  # pw-silhouettes release you want immediately.
+  workflow_dispatch: {}
 
-SITE_DIR="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
-DEST_DIR="${SITE_DIR}/pw-silhouettes"
-TMP_DIR="$(mktemp -d)"
-trap 'rm -rf "${TMP_DIR}"' EXIT
+permissions:
+  # Needed so the final step can push the commit back to this repo. If your org has
+  # tightened the default GITHUB_TOKEN permissions, this line is what overrides that
+  # for this workflow specifically - no separate PAT/secret required.
+  contents: write
 
-echo "[update-pw-silhouettes] checking ${REPO} latest release..."
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
 
-RELEASE_JSON="${TMP_DIR}/release.json"
-# -f: fail (non-zero exit) on HTTP errors instead of writing the error page to the file
-if ! curl -fsSL -H "Accept: application/vnd.github+json" "${API_URL}" -o "${RELEASE_JSON}"; then
-  echo "[update-pw-silhouettes] ERROR: failed to reach ${API_URL} (offline? rate-limited? - unauthenticated GitHub API calls are capped at 60/hour per IP)" >&2
-  exit 1
-fi
+      - name: Fetch latest pw-silhouettes release
+        # Invoked via `bash` rather than `./update-pw-silhouettes.sh` - if this file's
+        # executable bit gets dropped (e.g. by a web upload or a checkout that doesn't
+        # preserve Unix file modes), running it as `./script.sh` fails with exit code 126
+        # ("permission denied") even though the file's contents are fine. `bash script.sh`
+        # doesn't need the exec bit at all, so it works either way.
+        run: bash update-pw-silhouettes.sh
 
-# Pull out the browser_download_url for the two named assets. Done with python3's
-# json module rather than grep/sed so it can't be tripped up by field ordering or
-# by another asset's name/URL appearing elsewhere in the payload.
-PNG_URL="$(python3 -c "
-import json, sys
-with open('${RELEASE_JSON}') as f:
-    release = json.load(f)
-for asset in release.get('assets', []):
-    if asset.get('name') == 'spritesheet.png':
-        print(asset['browser_download_url'])
-        break
-")"
-JSON_URL="$(python3 -c "
-import json, sys
-with open('${RELEASE_JSON}') as f:
-    release = json.load(f)
-for asset in release.get('assets', []):
-    if asset.get('name') == 'spritesheet.json':
-        print(asset['browser_download_url'])
-        break
-")"
-RELEASE_TAG="$(python3 -c "
-import json
-with open('${RELEASE_JSON}') as f:
-    print(json.load(f).get('tag_name', 'unknown'))
-")"
-
-if [ -z "${PNG_URL}" ] || [ -z "${JSON_URL}" ]; then
-  echo "[update-pw-silhouettes] ERROR: latest release (${RELEASE_TAG}) doesn't have both spritesheet.png and spritesheet.json attached - leaving the existing local copy untouched" >&2
-  exit 1
-fi
-
-echo "[update-pw-silhouettes] latest release is ${RELEASE_TAG} - downloading..."
-curl -fsSL "${PNG_URL}" -o "${TMP_DIR}/spritesheet.png"
-curl -fsSL "${JSON_URL}" -o "${TMP_DIR}/spritesheet.json"
-
-# Sanity-check the JSON actually parses and the PNG actually has PNG magic bytes
-# before we let either overwrite the working copy.
-python3 -c "import json; json.load(open('${TMP_DIR}/spritesheet.json'))"
-if [ "$(head -c 8 "${TMP_DIR}/spritesheet.png" | od -An -tx1 | tr -d ' \n')" != "89504e470d0a1a0a" ]; then
-  echo "[update-pw-silhouettes] ERROR: downloaded spritesheet.png doesn't look like a valid PNG - aborting" >&2
-  exit 1
-fi
-
-mkdir -p "${DEST_DIR}"
-# Move into place last, after both files are downloaded and validated, so a
-# refresh is all-or-nothing - the page is never left pointing at a half-updated pair.
-mv "${TMP_DIR}/spritesheet.png" "${DEST_DIR}/spritesheet.png"
-mv "${TMP_DIR}/spritesheet.json" "${DEST_DIR}/spritesheet.json"
-
-echo "[update-pw-silhouettes] done - ${DEST_DIR} now on release ${RELEASE_TAG}"
+      - name: Commit and push if the sheet changed
+        run: |
+          if git diff --quiet -- pw-silhouettes/; then
+            echo "Already up to date - nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pw-silhouettes/spritesheet.png pw-silhouettes/spritesheet.json
+          git commit -m "chore: update pw-silhouettes spritesheet"
+          git push
