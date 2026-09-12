@@ -1638,7 +1638,12 @@
 
         const newLayer = L.tileLayer(tileUrl, {
           opacity: 0.35,
-          maxNativeZoom: 7,
+          // No maxNativeZoom cap: RainViewer generates tiles for whatever zoom is requested
+          // rather than serving a fixed native resolution. Capping it (previously 7) forced
+          // Leaflet to fetch a handful of huge tiles and stretch them to cover the view at
+          // our actual (higher) map zoom - any one of those big tiles failing/lagging to load
+          // left a large, hard-edged gap in the weather layer. Requesting tiles at the map's
+          // real zoom avoids that upscaling entirely.
           zIndex: 5,
           pane: 'tilePane'
         });
