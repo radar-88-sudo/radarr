@@ -512,7 +512,7 @@
 
     <aside class="sidebar">
       <div class="panel">
-        <div class="panel-title">Active Military Transponders</div>
+        <div class="panel-title">Active Military Transponders Within 35NM</div>
         <div id="aircraft-grid" class="aircraft-grid">
           <div style="color:var(--text-dim); font-size:0.75rem; padding: 0.5rem; text-align:center;">Scanning sector...</div>
         </div>
@@ -2440,20 +2440,44 @@
           // altitudeColor() and ALTITUDE_BANDS above.
           const silColor = isEmg ? '#ff3333' : (isQra || isMil ? '#ffb000' : altitudeColor(ac.alt_baro));
 
-          // NOTE: real plane-watch/pw-silhouettes artwork fetching has been removed - that
-          // repo restructured to only publish a packed spritesheet.png/spritesheet.json via
-          // GitHub Releases and no longer serves the per-type airframes/{DESIGNATOR}.json +
-          // individual SVGs this code was originally written against, so every fetch 404'd.
-          // The hand-drawn vector glyphs below (getSilhouetteType/drawAircraftSilhouettePath)
-          // are now the only rendering path - no network dependency, always available, and
-          // natively recolorable by altitude band.
+          // Prefer the real plane-watch/pw-silhouettes artwork for this ICAO type designator
+          // once it's finished loading; kick off loading it either way (harmless/no-op if
+          // already loading, loaded, or confirmed unavailable for this designator+colour).
           let drewPwSilhouette = false;
+          const typeDesignator = (ac.t || '').trim().toUpperCase();
+          if (typeDesignator) {
+            const pwSil = getPwSilhouette(typeDesignator, silColor);
+            if (pwSil && pwSil !== 'loading' && pwSil.images && pwSil.images.length) {
+              const { images, meta } = pwSil;
+              const frameIdx = meta.frameTime
+                ? Math.floor(Date.now() / meta.frameTime) % images.length
+                : 0;
+              const img = images[frameIdx];
+              if (img && img.complete && img.naturalWidth) {
+                // Source SVGs are a 70x70px cell; scale to roughly the same on-scope footprint
+                // as the hand-drawn glyphs below, then let each airframe's own `scale` (bigger
+                // for e.g. an A380, smaller for a light single) adjust from there.
+                const cellPx = 14 * meta.scale;
+                ctx.save();
+                ctx.translate(pt.x, pt.y);
+                if (!meta.noRotate) ctx.rotate((heading * Math.PI) / 180);
+                ctx.drawImage(
+                  img,
+                  -(meta.anchor.x / 70) * cellPx,
+                  -(meta.anchor.y / 70) * cellPx,
+                  cellPx,
+                  cellPx
+                );
+                ctx.restore();
+                drewPwSilhouette = true;
+              }
+            }
+          }
 
           if (!drewPwSilhouette) {
             ctx.save();
             ctx.translate(pt.x, pt.y);
             ctx.rotate((heading * Math.PI) / 180);
-            ctx.scale(2, 2);
 
             const silhouetteType = getSilhouetteType(ac.t, ac.category);
             drawAircraftSilhouettePath(ctx, silhouetteType);
