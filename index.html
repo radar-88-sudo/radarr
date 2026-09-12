@@ -154,10 +154,12 @@
       width: 100%;
       height: 100%;
       z-index: 1;
-      filter: brightness(1.15) contrast(1.05) saturate(1.1);
+      /* A single filter pass (just brightness) instead of stacking brightness+contrast+
+         saturate - each extra filter function is another full-surface compositing pass,
+         which adds up on a Pi's software/GPU-lite rendering path for an element this size. */
+      filter: brightness(1.1);
       opacity: 0.7;
       pointer-events: none;
-      transition: clip-path 0.2s ease-out;
     }
 
     canvas {
