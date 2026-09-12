@@ -2300,17 +2300,6 @@
       const edgePt = map.latLngToContainerPoint([edgeLat, userConfig.lon]);
       const maxRadiusPx = Math.abs(edgePt.y - centerPt.y);
 
-      // CRT-style scanlines - a faint horizontal grid drawn straight over everything else so
-      // it doesn't interact with the glow/blur below. Cheap and very subtle by design (4%
-      // opacity) - a wash of texture, not a visible stripe pattern.
-      ctx.save();
-      ctx.globalAlpha = 0.04;
-      ctx.fillStyle = '#000000';
-      for (let y = 0; y < canvas.height; y += 3) {
-        ctx.fillRect(0, y, canvas.width, 1);
-      }
-      ctx.restore();
-
       ctx.shadowColor = '#00ff66';
       ctx.shadowBlur = 8;
 
@@ -2444,6 +2433,10 @@
           // altitudeColor() and ALTITUDE_BANDS above.
           const silColor = isEmg ? '#ff3333' : (isQra || isMil ? '#ffb000' : altitudeColor(ac.alt_baro));
 
+          // Silhouette is always drawn at full brightness - only the label fades with the
+          // sweep, so the aircraft shape itself stays clearly visible between sweep passes.
+          ctx.globalAlpha = 1;
+
           // Prefer the real plane-watch/pw-silhouettes artwork for this ICAO type designator
           // once it's finished loading; kick off loading it either way (harmless/no-op if
           // already loading, loaded, or confirmed unavailable for this designator+colour).
@@ -2461,7 +2454,7 @@
                 // Source SVGs are a 70x70px cell; scale to roughly the same on-scope footprint
                 // as the hand-drawn glyphs below, then let each airframe's own `scale` (bigger
                 // for e.g. an A380, smaller for a light single) adjust from there.
-                const cellPx = 14 * meta.scale;
+                const cellPx = 22 * meta.scale;
                 ctx.save();
                 ctx.translate(pt.x, pt.y);
                 if (!meta.noRotate) ctx.rotate((heading * Math.PI) / 180);
@@ -2482,6 +2475,9 @@
             ctx.save();
             ctx.translate(pt.x, pt.y);
             ctx.rotate((heading * Math.PI) / 180);
+            // Hand-drawn glyphs are defined on a roughly +/-6 unit grid - scale them up
+            // so they read at a similar on-scope size to the enlarged pw-silhouette artwork.
+            ctx.scale(1.6, 1.6);
 
             const silhouetteType = getSilhouetteType(ac.t, ac.category);
             drawAircraftSilhouettePath(ctx, silhouetteType);
@@ -2494,6 +2490,7 @@
             ctx.restore();
           }
 
+          ctx.globalAlpha = fadeAlpha;
           ctx.font = 'bold 12px system-ui';
           const label = ac.flight ? ac.flight.trim() : ac.hex;
           const altText = ac.alt_baro ? ` FL${Math.round(ac.alt_baro / 100)}` : '';
@@ -2530,7 +2527,7 @@
           ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
           ctx.fillRect(labelBoxX, labelBoxY, labelBoxW, labelBoxH);
 
-          ctx.fillStyle = isEmg ? '#ff3333' : (isQra || isMil ? '#ffb000' : '#7B3F00');
+          ctx.fillStyle = isEmg ? '#ff3333' : (isQra || isMil ? '#ffb000' : '#b266ff');
           ctx.fillText(labelText, labelBoxX + labelPadX, labelBoxY + labelBoxH - labelPadY - 3);
 
           ctx.restore(); // matches the fadeAlpha save() above
