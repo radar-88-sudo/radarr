@@ -618,156 +618,154 @@
 
     // ---------------------------------------------------------------------
     // Radar-scope silhouettes: plane-watch/pw-silhouettes (CC BY-NC-SA 4.0 -
-    // https://github.com/plane-watch/pw-silhouettes). Each ICAO type designator
-    // (the same string airplanes.live/adsb.lol return as ac.t, e.g. "B738") has
-    // an airframes/{DESIGNATOR}.json describing which silhouettes/*.svg frame(s)
-    // to draw, an anchor point, a scale, and whether it should ignore heading
-    // rotation - plus an optional aliasOf pointing at another designator whose
-    // artwork should be reused as-is. See CONTRIBUTING.md in that repo for the
-    // full schema. Resolution/loading is async and this repo's library only
-    // covers a subset of real-world types, so every aircraft is drawn with the
-    // existing hand-drawn vector glyph (getSilhouetteType/drawAircraftSilhouettePath,
-    // see below) the first time it's seen, and silently upgraded to the real
-    // silhouette a poll or two later once it's finished loading - nothing ever
-    // blocks on the network here.
+    // https://github.com/plane-watch/pw-silhouettes), vendored locally as a prebuilt
+    // spritesheet rather than fetched from a CDN at runtime - see pw-silhouettes/ next to
+    // this file (spritesheet.png + spritesheet.json + LICENSE). spritesheet.png is a grid
+    // of 72x72px cells, each shape filled white / stroked black; spritesheet.json maps
+    // every ICAO type designator (ac.t, e.g. "B738") and every ADS-B emitter category
+    // (ac.category, e.g. "A7") to a cell (or an animated sequence of cells), an anchor
+    // point, and a scale. A designator with no specific artwork falls back to its
+    // category's generic silhouette (see resolvePwSpriteKey); if even that's missing -
+    // e.g. no category reported at all - nothing is drawn for that aircraft beyond its
+    // label. There is no hand-drawn glyph fallback any more.
     // ---------------------------------------------------------------------
-    // Two mirrors of the same repo content, tried in order - jsDelivr first (edge-cached CDN,
-    // different domain/infra from GitHub so a block/CORS issue on one often doesn't affect the
-    // other), falling back to GitHub's own raw content host if jsDelivr is unreachable.
-    const PW_SILHOUETTES_BASES = [
-      'https://cdn.jsdelivr.net/gh/plane-watch/pw-silhouettes@main',
-      'https://raw.githubusercontent.com/plane-watch/pw-silhouettes/main'
-    ];
+    const PW_SPRITESHEET_PNG_PATH = './pw-silhouettes/spritesheet.png';
+    const PW_SPRITESHEET_JSON_PATH = './pw-silhouettes/spritesheet.json';
 
-    // designator -> resolved render info ({frames:[svgPath,...], frameTime, anchor:{x,y}, scale, noRotate}),
-    // or null once confirmed this repo has no airframe entry for it (incl. after following aliasOf).
-    const pwAirframeCache = {};
-    // ICAO designator -> in-flight/parsed airframe JSON, or null for a confirmed 404.
-    const pwAirframeJsonCache = {};
-    // silhouettes/X.svg path -> Promise<rawSvgText>, shared across every colour variant of that frame.
-    const pwRawSvgTextCache = {};
-    // `${designator}|${colorHex}` -> 'loading', null (failed/unavailable), or {images:[HTMLImageElement,...], meta}.
-    const pwColoredFrameCache = {};
+    let pwSpritesheetImg = null;
+    let pwSpritesheetMeta = null;
+    let pwSpritesheetReady = false;
 
-    // Tries each mirror in turn for a given repo-relative path, returning the first successful
-    // Response. A 404 on one mirror still tries the next in case they're out of sync, but the
-    // main point is surviving a CORS/network failure (not just a missing file) on either one.
-    async function fetchPwResource(path) {
-      let lastErr = new Error('no pw-silhouettes mirrors configured');
-      for (const base of PW_SILHOUETTES_BASES) {
-        try {
-          const res = await fetch(`${base}/${path}`);
-          if (res.ok) return res;
-          lastErr = new Error(`HTTP ${res.status} from ${base}`);
-        } catch (err) {
-          console.debug(`[pw-silhouettes] ${base} unreachable for ${path} -`, err.message || err);
-          lastErr = err;
-        }
-      }
-      throw lastErr;
-    }
+    // Full recoloured copies of the sheet, keyed by target hex colour - see getRecoloredSheet().
+    const pwRecoloredSheetCache = {};
 
-    async function fetchPwAirframeJson(designator) {
-      if (pwAirframeJsonCache[designator] !== undefined) return pwAirframeJsonCache[designator];
+    async function loadPwSpritesheet() {
       try {
-        const res = await fetchPwResource(`airframes/${designator}.json`);
-        pwAirframeJsonCache[designator] = await res.json();
+        const [meta, img] = await Promise.all([
+          fetch(PW_SPRITESHEET_JSON_PATH).then(res => res.json()),
+          new Promise((resolve, reject) => {
+            const image = new Image();
+            image.onload = () => resolve(image);
+            image.onerror = () => reject(new Error('failed to decode spritesheet.png'));
+            image.src = PW_SPRITESHEET_PNG_PATH;
+          })
+        ]);
+        pwSpritesheetMeta = meta;
+        pwSpritesheetImg = img;
+        pwSpritesheetReady = true;
+        console.debug(`[pw-silhouettes] spritesheet loaded (${Object.keys(meta.sprites).length} sprites)`);
       } catch (err) {
-        console.warn(`[pw-silhouettes] fetch failed for airframes/${designator}.json -`, err);
-        pwAirframeJsonCache[designator] = null;
+        console.warn('[pw-silhouettes] failed to load local spritesheet -', err);
       }
-      return pwAirframeJsonCache[designator];
     }
 
-    // Resolves a designator to concrete render info, following aliasOf (alias files can omit
-    // render/art entirely and just inherit the canonical designator's artwork - see CONTRIBUTING.md).
-    // depth guards against an accidental alias cycle in the source data.
-    async function resolvePwAirframe(designator, depth = 0) {
-      if (depth > 4) return null;
-      const json = await fetchPwAirframeJson(designator);
-      if (!json) return null;
-      if (json.aliasOf) return resolvePwAirframe(json.aliasOf, depth + 1);
-      if (!json.art || !Array.isArray(json.art.frames) || json.art.frames.length === 0) {
-        console.warn(`[pw-silhouettes] airframes/${designator}.json has no usable art.frames -`, json);
-        return null;
-      }
+    function hexToRgb(hex) {
+      const clean = hex.replace('#', '');
       return {
-        frames: json.art.frames.map(f => f.src),
-        frameTime: json.art.frameTime || null,
-        anchor: (json.render && json.render.anchor) || { x: 35, y: 35 },
-        scale: (json.render && json.render.scale) || 1,
-        noRotate: !!(json.render && json.render.noRotate)
+        r: parseInt(clean.substring(0, 2), 16),
+        g: parseInt(clean.substring(2, 4), 16),
+        b: parseInt(clean.substring(4, 6), 16)
       };
     }
 
-    // Loads one silhouettes/*.svg frame, recoloured to the given hex colour, as an <img>.
-    // Per CONTRIBUTING.md every visible shape in these SVGs is filled #ffffff / stroked #000000,
-    // so a straight string substitution is enough - swap the fill for whichever scope colour this
-    // aircraft should render in, and the stroke for the canvas background so it reads as a thin
-    // outline rather than a hard black border (matching the existing hand-drawn glyphs' style).
-    async function loadPwSilhouetteFrame(svgPath, colorHex) {
-      if (!pwRawSvgTextCache[svgPath]) {
-        pwRawSvgTextCache[svgPath] = fetchPwResource(svgPath).then(res => res.text());
+    // ADS-B emitter category letter -> this repo's internal numeric "typeCode" (see its
+    // generics/*.json + tools/build_spritesheet - the genericToSprite key is
+    // "${typeCode}/${categoryNumber}", e.g. category "A7" (rotorcraft) -> "4/7").
+    const PW_CATEGORY_LETTER_TO_TYPECODE = { A: 4, B: 3, C: 2, D: 1 };
+
+    // Resolves an aircraft to a sprite key: specific type designator first, then its
+    // ADS-B category's generic silhouette, or null if neither is covered.
+    function resolvePwSpriteKey(ac) {
+      if (!pwSpritesheetMeta) return null;
+      const designator = (ac.t || '').trim().toUpperCase();
+      if (designator && pwSpritesheetMeta.airframeToSprite[designator]) {
+        return pwSpritesheetMeta.airframeToSprite[designator];
       }
-      const svgText = await pwRawSvgTextCache[svgPath];
-      const recolored = svgText
-        .replace(/#ffffff/gi, colorHex)
-        .replace(/#000000/gi, '#020704');
-      const dataUrl = 'data:image/svg+xml;utf8,' + encodeURIComponent(recolored);
-      return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => resolve(img);
-        img.onerror = () => reject(new Error(`failed to decode ${svgPath} as an image`));
-        img.src = dataUrl;
-      });
+      const category = (ac.category || '').trim().toUpperCase();
+      const typeCode = PW_CATEGORY_LETTER_TO_TYPECODE[category[0]];
+      const number = category[1];
+      if (typeCode && number) {
+        const genericKey = `${typeCode}/${number}`;
+        if (pwSpritesheetMeta.genericToSprite[genericKey]) return pwSpritesheetMeta.genericToSprite[genericKey];
+      }
+      return null;
     }
 
-    // Kicks off (once) resolving + loading every frame for designator/colorHex, returning
-    // whatever's known synchronously so the render loop never has to await: 'loading' while
-    // in flight, null once confirmed unavailable, or the finished {images, meta} bundle.
-    function getPwSilhouette(designator, colorHex) {
-      const cacheKey = `${designator}|${colorHex}`;
-      const cached = pwColoredFrameCache[cacheKey];
-      if (cached !== undefined) return cached;
+    // Recolours a full copy of the spritesheet for one target colour, once, and caches it -
+    // every aircraft rendered in that colour then just blits a rect out of the cached canvas
+    // (no per-aircraft/per-frame recolouring work in the render loop). Sprites are white
+    // fill / black stroke on a transparent background (CONTRIBUTING.md in that repo), so
+    // this is a duotone remap: each pixel's grey level (0 = stroke, 1 = fill) picks how far
+    // to blend from the canvas-background stroke colour toward the target fill colour,
+    // leaving the original alpha untouched - reproducing the same look the old per-SVG
+    // fill/stroke string-substitution gave.
+    function getRecoloredSheet(colorHex) {
+      if (pwRecoloredSheetCache[colorHex]) return pwRecoloredSheetCache[colorHex];
+      if (!pwSpritesheetReady) return null;
 
-      pwColoredFrameCache[cacheKey] = 'loading';
-      (async () => {
-        try {
-          if (pwAirframeCache[designator] === undefined) {
-            pwAirframeCache[designator] = await resolvePwAirframe(designator);
-          }
-          const meta = pwAirframeCache[designator];
-          if (!meta) {
-            pwColoredFrameCache[cacheKey] = null;
-            return;
-          }
-          const images = await Promise.all(meta.frames.map(src => loadPwSilhouetteFrame(src, colorHex)));
-          console.debug(`[pw-silhouettes] loaded real silhouette for "${designator}" (${meta.frames.join(', ')})`);
-          pwColoredFrameCache[cacheKey] = { images, meta };
-        } catch (err) {
-          console.warn(`[pw-silhouettes] failed to load silhouette for "${designator}" -`, err);
-          pwColoredFrameCache[cacheKey] = null;
-        }
-      })();
-      return 'loading';
+      const w = pwSpritesheetImg.naturalWidth;
+      const h = pwSpritesheetImg.naturalHeight;
+      const src = document.createElement('canvas');
+      src.width = w;
+      src.height = h;
+      const sctx = src.getContext('2d');
+      sctx.drawImage(pwSpritesheetImg, 0, 0);
+      const imageData = sctx.getImageData(0, 0, w, h);
+      const px = imageData.data;
+
+      const strokeRgb = hexToRgb('#020704');
+      const fillRgb = hexToRgb(colorHex);
+      for (let i = 0; i < px.length; i += 4) {
+        if (px[i + 3] === 0) continue;
+        const grey = px[i] / 255;
+        px[i] = strokeRgb.r + (fillRgb.r - strokeRgb.r) * grey;
+        px[i + 1] = strokeRgb.g + (fillRgb.g - strokeRgb.g) * grey;
+        px[i + 2] = strokeRgb.b + (fillRgb.b - strokeRgb.b) * grey;
+      }
+      sctx.putImageData(imageData, 0, 0);
+      pwRecoloredSheetCache[colorHex] = src;
+      return src;
     }
 
-    // Manual console helper for checking a specific designator without waiting for a real
-    // aircraft of that type to appear, e.g. testPwSilhouette('B738'). Logs the resolved
-    // render info (or why it failed) and, on success, returns the loaded <img> elements.
-    window.testPwSilhouette = async function (designator, colorHex) {
-      designator = String(designator || '').trim().toUpperCase();
-      colorHex = colorHex || '#00ff66';
-      console.log(`[pw-silhouettes] testing "${designator}"...`);
-      const json = await fetchPwAirframeJson(designator);
-      console.log(`[pw-silhouettes] airframes/${designator}.json ->`, json);
-      const meta = await resolvePwAirframe(designator);
-      console.log(`[pw-silhouettes] resolved render info ->`, meta);
-      if (!meta) return null;
-      const images = await Promise.all(meta.frames.map(src => loadPwSilhouetteFrame(src, colorHex)));
-      console.log(`[pw-silhouettes] loaded ${images.length} frame(s):`, images);
-      return images;
-    };
+    // Draws an aircraft's silhouette at (pt.x, pt.y), rotated to its heading unless the
+    // sprite says not to. Returns whether anything was actually drawn.
+    function drawPwSilhouette(ctx, ac, pt, heading, colorHex) {
+      const spriteKey = resolvePwSpriteKey(ac);
+      if (!spriteKey) return false;
+      const spriteMeta = pwSpritesheetMeta.sprites[spriteKey];
+      if (!spriteMeta) return false;
+      const sheet = getRecoloredSheet(colorHex);
+      if (!sheet) return false;
+
+      const cellSize = pwSpritesheetMeta.metadata.spriteWidth;
+      const cols = Math.floor(sheet.width / cellSize);
+      const frameIdx = spriteMeta.frameTime
+        ? Math.floor(Date.now() / spriteMeta.frameTime) % spriteMeta.ids.length
+        : 0;
+      const id = spriteMeta.ids[frameIdx];
+      const sx = (id % cols) * cellSize;
+      const sy = Math.floor(id / cols) * cellSize;
+
+      // Scale to roughly the same on-scope footprint the old hand-drawn/CDN glyphs used,
+      // then let each sprite's own `scale` (bigger for e.g. an A380, smaller for a light
+      // single) adjust from there.
+      const cellPx = 22 * (spriteMeta.scale || 1);
+      const anchor = spriteMeta.anchor || { x: cellSize / 2, y: cellSize / 2 };
+
+      ctx.save();
+      ctx.translate(pt.x, pt.y);
+      if (!spriteMeta.noRotate) ctx.rotate((heading * Math.PI) / 180);
+      ctx.drawImage(
+        sheet,
+        sx, sy, cellSize, cellSize,
+        -(anchor.x / cellSize) * cellPx,
+        -(anchor.y / cellSize) * cellPx,
+        cellPx,
+        cellPx
+      );
+      ctx.restore();
+      return true;
+    }
 
     let scrollState = 'PAUSED_TOP';
     let scrollTimer = 120;
@@ -819,6 +817,7 @@
       ctx = canvas.getContext('2d');
 
       initMap();
+      loadPwSpritesheet();
       resizeCanvas();
       window.addEventListener('resize', resizeCanvas);
       buildAltitudeLegend();
@@ -1409,9 +1408,9 @@
     // ---------------------------------------------------------------------
     // UFO easter egg: typing "ufo" on the keyboard (once the feed has started) spawns a fake
     // unidentified contact a few NM out, same TTL/merge pattern as the test-squawk injector
-    // above. Type "UFO" (ac.t) runs through the exact same getPwSilhouette() lookup as any real
-    // aircraft, so it picks up pw-silhouettes' own UFO artwork once it's loaded (a poll or two
-    // after first appearing) - no special-casing needed here, same as everything else it draws.
+    // above. Type "UFO" (ac.t) runs through the exact same drawPwSilhouette() lookup as any
+    // real aircraft - pw-silhouettes has no "UFO" artwork and category "A0" (no info) has no
+    // generic either, so nothing is drawn but the label, same as any other uncovered type.
     // The rest is deliberately unremarkable: placeholder altitude/speed, and the
     // REGISTRATION_OVERRIDES 'UFO1' badge (see fetchAircraftPhoto) instead of a real airline
     // logo. Most sightings squawk a normal 1200; some fraction squawk 7700 instead so it
@@ -2115,177 +2114,6 @@
       }
     }
 
-    // Finer-grained classification, closer to what ADS-B Exchange / tar1090 does: rather than
-    // lumping everything non-military into one "airliner" glyph, split by airframe class so the
-    // scope reads at a glance (widebody vs narrowbody vs regional jet vs turboprop vs GA single
-    // vs biz jet vs glider), in addition to the existing fighter/heavy-mil/helicopter buckets.
-    function getSilhouetteType(typeCode, category) {
-      const t = (typeCode || '').toUpperCase();
-      const cat = (category || '').toUpperCase();
-
-      if (['F16', 'F15', 'F18', 'F35', 'F22', 'EF20', 'EUFI', 'TYPH', 'TOR', 'HAWK', 'A10'].some(s => t.includes(s))) return 'fighter';
-
-      if (['CH47', 'AH64', 'UH60', 'V22', 'EC35', 'EC45', 'AS35', 'AS50', 'R22', 'R44', 'B407', 'B206', 'H125', 'H135', 'NH90'].some(s => t.includes(s))) return 'helicopter';
-      if (cat === 'A7') return 'helicopter';
-
-      // Military heavies (transports/tankers/AWACS) and civil widebodies both read as "heavy"
-      // on scope - big fuselage, four-abreast wing swept further back, wider tail.
-      const heavyTypes = [
-        'C17', 'C130', 'A400', 'K35R', 'KC135', 'KC10', 'KC46', 'E3TF', 'E3', 'P8', 'RC135', 'C5',
-        'B742', 'B743', 'B744', 'B748', 'A388', // 747 / A380
-        'B772', 'B773', 'B77L', 'B77W', 'B788', 'B789', 'B78X', // 777 / 787
-        'A332', 'A333', 'A338', 'A339', 'A342', 'A343', 'A345', 'A346', 'A359', 'A35K', // A330/340/350
-        'MD11', 'IL76', 'IL96'
-      ];
-      if (heavyTypes.some(s => (s === 'C17' ? (t === 'C17' || t === 'C-17') : t.includes(s)))) return 'heavy';
-
-      // Regional jets - smaller swept-wing twins, shorter fuselage than a narrowbody airliner.
-      const regionalTypes = ['CRJ1', 'CRJ2', 'CRJ7', 'CRJ9', 'CRJX', 'E135', 'E145', 'E170', 'E175', 'E190', 'E195', 'ERJ1', 'ERJ4', 'SU95', 'F70', 'F100'];
-      if (regionalTypes.some(s => t.includes(s))) return 'regional';
-
-      // Business jets - small sleek jets, short/straight-ish wings, no widebody presence.
-      const bizjetTypes = ['C25A', 'C25B', 'C25C', 'C550', 'C56X', 'C680', 'C700', 'C750', 'GLF4', 'GLF5', 'GLF6', 'GLEX', 'CL30', 'CL35', 'FA7X', 'FA8X', 'F900', 'LJ35', 'LJ45', 'LJ60', 'E50P', 'E55P', 'E545', 'E550', 'H25B', 'PRM1'];
-      if (bizjetTypes.some(s => t.includes(s))) return 'bizjet';
-
-      // Twin turboprops - straight wings, visible engine nacelles, stubbier fuselage.
-      const turbopropTypes = ['AT43', 'AT45', 'AT72', 'AT75', 'AT76', 'DH8A', 'DH8B', 'DH8C', 'DH8D', 'SF34', 'B350', 'BE20', 'BE30', 'BE9L', 'JS41', 'JS32', 'SW4', 'D328', 'DHC6', 'MU2', 'F27', 'F50'];
-      if (turbopropTypes.some(s => t.includes(s))) return 'turboprop';
-
-      // Single-engine GA / light singles (incl. single-turboprop like PC12/TBM/C208).
-      const singlepropTypes = ['C172', 'C152', 'C182', 'C206', 'PA28', 'PA34', 'PA46', 'SR20', 'SR22', 'DA40', 'DA42', 'DA62', 'M20P', 'M20T', 'BE36', 'BE33', 'PC12', 'TBM8', 'TBM9', 'C208', 'GA8'];
-      if (singlepropTypes.some(s => t.includes(s))) return 'singleprop';
-
-      const gliderTypes = ['GLID', 'ASK21', 'ASW', 'DG40', 'DG80', 'LS8', 'LS6', 'VENT'];
-      if (gliderTypes.some(s => t.includes(s))) return 'glider';
-
-      // Everything else defaults to narrowbody jet (737/A320-family territory) - the most
-      // common shape in normal airspace, and a sane fallback when the type code is unknown.
-      return 'airliner';
-    }
-
-    function drawAircraftSilhouettePath(ctx, type) {
-      ctx.beginPath();
-      if (type === 'fighter') {
-        ctx.moveTo(0, -6);
-        ctx.lineTo(1.5, -1.5);
-        ctx.lineTo(4, 3);
-        ctx.lineTo(1, 2);
-        ctx.lineTo(1.5, 5);
-        ctx.lineTo(0, 4);
-        ctx.lineTo(-1.5, 5);
-        ctx.lineTo(-1, 2);
-        ctx.lineTo(-4, 3);
-        ctx.lineTo(-1.5, -1.5);
-      } else if (type === 'heavy') {
-        ctx.moveTo(0, -6);
-        ctx.lineTo(2, -2);
-        ctx.lineTo(5.5, 1);
-        ctx.lineTo(5.5, 2.5);
-        ctx.lineTo(1.5, 1.5);
-        ctx.lineTo(2, 5.5);
-        ctx.lineTo(0, 4);
-        ctx.lineTo(-2, 5.5);
-        ctx.lineTo(-1.5, 1.5);
-        ctx.lineTo(-5.5, 2.5);
-        ctx.lineTo(-5.5, 1);
-        ctx.lineTo(-2, -2);
-      } else if (type === 'helicopter') {
-        ctx.arc(0, 0, 3, 0, 2 * Math.PI);
-        ctx.moveTo(0, 3);
-        ctx.lineTo(0, 6);
-      } else if (type === 'regional') {
-        // Same swept-wing family as the narrowbody shape, scaled down (shorter fuselage,
-        // shorter wingspan) so it reads visibly smaller on scope next to an airliner.
-        ctx.moveTo(0, -5);
-        ctx.lineTo(1, -2);
-        ctx.lineTo(3.6, 0.5);
-        ctx.lineTo(3.6, 1.6);
-        ctx.lineTo(1, 0.8);
-        ctx.lineTo(1.2, 4);
-        ctx.lineTo(0, 3);
-        ctx.lineTo(-1.2, 4);
-        ctx.lineTo(-1, 0.8);
-        ctx.lineTo(-3.6, 1.6);
-        ctx.lineTo(-3.6, 0.5);
-        ctx.lineTo(-1, -2);
-      } else if (type === 'bizjet') {
-        // Small, sleek: pointed nose, short straight-ish wings set well aft, narrow tail.
-        ctx.moveTo(0, -5.5);
-        ctx.lineTo(0.7, -1.5);
-        ctx.lineTo(3, 1);
-        ctx.lineTo(3, 1.9);
-        ctx.lineTo(0.7, 1.1);
-        ctx.lineTo(0.9, 4.2);
-        ctx.lineTo(0, 3.2);
-        ctx.lineTo(-0.9, 4.2);
-        ctx.lineTo(-0.7, 1.1);
-        ctx.lineTo(-3, 1.9);
-        ctx.lineTo(-3, 1);
-        ctx.lineTo(-0.7, -1.5);
-      } else if (type === 'turboprop') {
-        // Straight (unswept) wings with a small nacelle bump, boxier/stubbier fuselage.
-        ctx.moveTo(0, -5);
-        ctx.lineTo(0.9, -1);
-        ctx.lineTo(4.5, -1);
-        ctx.lineTo(4.5, 0.4);
-        ctx.lineTo(1.6, 0.6);
-        ctx.lineTo(1.4, 1.2);
-        ctx.lineTo(2.2, 1.2);
-        ctx.lineTo(1, 3.8);
-        ctx.lineTo(0, 3);
-        ctx.lineTo(-1, 3.8);
-        ctx.lineTo(-2.2, 1.2);
-        ctx.lineTo(-1.4, 1.2);
-        ctx.lineTo(-1.6, 0.6);
-        ctx.lineTo(-4.5, 0.4);
-        ctx.lineTo(-4.5, -1);
-        ctx.lineTo(-0.9, -1);
-      } else if (type === 'singleprop') {
-        // Small GA single: single wide straight wing, small tail, short blunt nose.
-        ctx.moveTo(0, -4);
-        ctx.lineTo(0.7, -1.2);
-        ctx.lineTo(4.2, 0.2);
-        ctx.lineTo(4.2, 1);
-        ctx.lineTo(0.7, 0.2);
-        ctx.lineTo(0.8, 3.6);
-        ctx.lineTo(0, 2.8);
-        ctx.lineTo(-0.8, 3.6);
-        ctx.lineTo(-0.7, 0.2);
-        ctx.lineTo(-4.2, 1);
-        ctx.lineTo(-4.2, 0.2);
-        ctx.lineTo(-0.7, -1.2);
-      } else if (type === 'glider') {
-        // Very long, thin, unswept wings and a slender fuselage - no engine bulk anywhere.
-        ctx.moveTo(0, -4.5);
-        ctx.lineTo(0.5, -0.5);
-        ctx.lineTo(6, 0.3);
-        ctx.lineTo(6, 0.8);
-        ctx.lineTo(0.5, 0.6);
-        ctx.lineTo(0.6, 4);
-        ctx.lineTo(0, 3.2);
-        ctx.lineTo(-0.6, 4);
-        ctx.lineTo(-0.5, 0.6);
-        ctx.lineTo(-6, 0.8);
-        ctx.lineTo(-6, 0.3);
-        ctx.lineTo(-0.5, -0.5);
-      } else {
-        // Default narrowbody jet (737/A320-family shape).
-        ctx.moveTo(0, -6);
-        ctx.lineTo(1.2, -2.5);
-        ctx.lineTo(5, 0.5);
-        ctx.lineTo(5, 2);
-        ctx.lineTo(1.2, 1);
-        ctx.lineTo(1.5, 5);
-        ctx.lineTo(0, 3.5);
-        ctx.lineTo(-1.5, 5);
-        ctx.lineTo(-1.2, 1);
-        ctx.lineTo(-5, 2);
-        ctx.lineTo(-5, 0.5);
-        ctx.lineTo(-1.2, -2.5);
-      }
-      ctx.closePath();
-    }
-
     let sweepAngle = 0;
     // One full sweep rotation (2π at +0.015rad/frame, ~60fps) takes ~7s - fade every non-locked
     // blip out over roughly that long, down to a dim floor rather than to nothing, so the scope
@@ -2442,58 +2270,10 @@
           // sweep, so the aircraft shape itself stays clearly visible between sweep passes.
           ctx.globalAlpha = 1;
 
-          // Prefer the real plane-watch/pw-silhouettes artwork for this ICAO type designator
-          // once it's finished loading; kick off loading it either way (harmless/no-op if
-          // already loading, loaded, or confirmed unavailable for this designator+colour).
-          let drewPwSilhouette = false;
-          const typeDesignator = (ac.t || '').trim().toUpperCase();
-          if (typeDesignator) {
-            const pwSil = getPwSilhouette(typeDesignator, silColor);
-            if (pwSil && pwSil !== 'loading' && pwSil.images && pwSil.images.length) {
-              const { images, meta } = pwSil;
-              const frameIdx = meta.frameTime
-                ? Math.floor(Date.now() / meta.frameTime) % images.length
-                : 0;
-              const img = images[frameIdx];
-              if (img && img.complete && img.naturalWidth) {
-                // Source SVGs are a 70x70px cell; scale to roughly the same on-scope footprint
-                // as the hand-drawn glyphs below, then let each airframe's own `scale` (bigger
-                // for e.g. an A380, smaller for a light single) adjust from there.
-                const cellPx = 22 * meta.scale;
-                ctx.save();
-                ctx.translate(pt.x, pt.y);
-                if (!meta.noRotate) ctx.rotate((heading * Math.PI) / 180);
-                ctx.drawImage(
-                  img,
-                  -(meta.anchor.x / 70) * cellPx,
-                  -(meta.anchor.y / 70) * cellPx,
-                  cellPx,
-                  cellPx
-                );
-                ctx.restore();
-                drewPwSilhouette = true;
-              }
-            }
-          }
-
-          if (!drewPwSilhouette) {
-            ctx.save();
-            ctx.translate(pt.x, pt.y);
-            ctx.rotate((heading * Math.PI) / 180);
-            // Hand-drawn glyphs are defined on a roughly +/-6 unit grid - scale them up
-            // so they read at a similar on-scope size to the enlarged pw-silhouette artwork.
-            ctx.scale(1.6, 1.6);
-
-            const silhouetteType = getSilhouetteType(ac.t, ac.category);
-            drawAircraftSilhouettePath(ctx, silhouetteType);
-
-            ctx.fillStyle = silColor;
-            ctx.fill();
-            ctx.lineWidth = 0.8;
-            ctx.strokeStyle = '#020704';
-            ctx.stroke();
-            ctx.restore();
-          }
+          // Local spritesheet lookup - specific type designator first, falling back to the
+          // aircraft's ADS-B category's generic silhouette. Draws nothing (beyond the label)
+          // if neither is covered - see drawPwSilhouette/resolvePwSpriteKey above.
+          drawPwSilhouette(ctx, ac, pt, heading, silColor);
 
           ctx.globalAlpha = fadeAlpha;
           ctx.font = 'bold 9px system-ui';
