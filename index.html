@@ -35,6 +35,14 @@
       touch-action: none;
     }
 
+    /* Automatic night mode - see applyNightMode(). A plain brightness/saturation dim rather
+       than touching individual colours, so it works uniformly across the scope, sidebar and
+       scrollboard without having to special-case every element. */
+    body.night-mode {
+      filter: brightness(0.55) saturate(0.8);
+      transition: filter 3s ease;
+    }
+
     /* Red Pulsing Screen Overlay */
     #screen-pulse-overlay {
       position: fixed;
@@ -114,6 +122,19 @@
       min-height: 0;
     }
 
+    /* Wraps <main> + <footer> so the whole visible UI (not the fixed full-screen overlays,
+       which are siblings of this) can be nudged a couple of px every so often - see
+       cycleBurnInShift() - without disturbing anything else. Same flex layout body gave
+       these two directly before this wrapper existed. */
+    #burn-in-shield {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+      width: 100%;
+      transition: transform 8s linear;
+    }
+
     .radar-wrapper {
       position: relative;
       background: #010502;
@@ -156,6 +177,24 @@
       z-index: 10;
       min-height: 0;
     }
+
+    /* Altitude colour-key, bottom-left corner of the scope */
+    #altitude-legend {
+      position: absolute;
+      left: 8px;
+      bottom: 8px;
+      z-index: 3;
+      background: rgba(2, 8, 4, 0.65);
+      border: 1px solid var(--card-border);
+      border-radius: 4px;
+      padding: 4px 6px;
+      font-size: 0.6rem;
+      line-height: 1.5;
+      color: var(--text-dim);
+      pointer-events: none;
+    }
+    .legend-row { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+    .legend-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
 
     .panel {
       background: var(--card-bg);
@@ -463,10 +502,12 @@
     <div class="start-sub">Tap or click anywhere to start the feed and enable audio alerts</div>
   </div>
 
+  <div id="burn-in-shield">
   <main>
     <div class="radar-wrapper" id="radarContainer">
       <div id="map"></div>
       <canvas id="radarCanvas"></canvas>
+      <div id="altitude-legend"></div>
     </div>
 
     <aside class="sidebar">
@@ -517,8 +558,15 @@
         <div id="sb-heading" class="secondary-metric">Hdng: --°</div>
         <div id="sb-bearing" class="secondary-metric" style="font-size:0.72rem; color:var(--text-dim);">Bearing: --°</div>
       </div>
+
+      <div class="banner-col metric-group">
+        <div class="sub-title">Time</div>
+        <div id="sb-flight-time" class="secondary-metric">Flight Time: --</div>
+        <div id="sb-eta" class="secondary-metric">ETA: --</div>
+      </div>
     </div>
   </footer>
+  </div>
 
   <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"
           onerror="console.error('LEAFLET FAILED TO LOAD - CHECK NETWORK');"></script>
@@ -535,6 +583,14 @@
     let pollBackoffUntil = 0;
     let consecutive429s = 0;
     const aircraftTrails = {};
+    // hex -> Date.now() of the last time the sweep beam passed this aircraft's bearing (CRT-style
+    // "blip brightens on sweep pass, fades until the next one" - see drawRadarScope). The locked
+    // aircraft is exempt and always drawn at full brightness regardless of this.
+    const aircraftLastSweepHit = {};
+    // hex -> Date.now() the first time this aircraft was seen this session - used for the
+    // scrollboard's "Flight Time" (time tracked, not a real off-block/departure timestamp,
+    // which ADS-B doesn't give us - see updateNearestScrollboard).
+    const aircraftFirstSeenAt = {};
 
     // Home-use kiosk: audio alerts are always on, no mute toggle.
     const audioAlertsEnabled = true;
@@ -575,7 +631,13 @@
     // silhouette a poll or two later once it's finished loading - nothing ever
     // blocks on the network here.
     // ---------------------------------------------------------------------
-    const PW_SILHOUETTES_BASE = 'https://raw.githubusercontent.com/plane-watch/pw-silhouettes/main';
+    // Two mirrors of the same repo content, tried in order - jsDelivr first (edge-cached CDN,
+    // different domain/infra from GitHub so a block/CORS issue on one often doesn't affect the
+    // other), falling back to GitHub's own raw content host if jsDelivr is unreachable.
+    const PW_SILHOUETTES_BASES = [
+      'https://cdn.jsdelivr.net/gh/plane-watch/pw-silhouettes@main',
+      'https://raw.githubusercontent.com/plane-watch/pw-silhouettes/main'
+    ];
 
     // designator -> resolved render info ({frames:[svgPath,...], frameTime, anchor:{x,y}, scale, noRotate}),
     // or null once confirmed this repo has no airframe entry for it (incl. after following aliasOf).
@@ -587,15 +649,28 @@
     // `${designator}|${colorHex}` -> 'loading', null (failed/unavailable), or {images:[HTMLImageElement,...], meta}.
     const pwColoredFrameCache = {};
 
+    // Tries each mirror in turn for a given repo-relative path, returning the first successful
+    // Response. A 404 on one mirror still tries the next in case they're out of sync, but the
+    // main point is surviving a CORS/network failure (not just a missing file) on either one.
+    async function fetchPwResource(path) {
+      let lastErr = new Error('no pw-silhouettes mirrors configured');
+      for (const base of PW_SILHOUETTES_BASES) {
+        try {
+          const res = await fetch(`${base}/${path}`);
+          if (res.ok) return res;
+          lastErr = new Error(`HTTP ${res.status} from ${base}`);
+        } catch (err) {
+          console.debug(`[pw-silhouettes] ${base} unreachable for ${path} -`, err.message || err);
+          lastErr = err;
+        }
+      }
+      throw lastErr;
+    }
+
     async function fetchPwAirframeJson(designator) {
       if (pwAirframeJsonCache[designator] !== undefined) return pwAirframeJsonCache[designator];
       try {
-        const res = await fetch(`${PW_SILHOUETTES_BASE}/airframes/${designator}.json`);
-        if (!res.ok) {
-          console.debug(`[pw-silhouettes] no airframe entry for "${designator}" (HTTP ${res.status})`);
-          pwAirframeJsonCache[designator] = null;
-          return null;
-        }
+        const res = await fetchPwResource(`airframes/${designator}.json`);
         pwAirframeJsonCache[designator] = await res.json();
       } catch (err) {
         console.warn(`[pw-silhouettes] fetch failed for airframes/${designator}.json -`, err);
@@ -632,10 +707,7 @@
     // outline rather than a hard black border (matching the existing hand-drawn glyphs' style).
     async function loadPwSilhouetteFrame(svgPath, colorHex) {
       if (!pwRawSvgTextCache[svgPath]) {
-        pwRawSvgTextCache[svgPath] = fetch(`${PW_SILHOUETTES_BASE}/${svgPath}`).then(res => {
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          return res.text();
-        });
+        pwRawSvgTextCache[svgPath] = fetchPwResource(svgPath).then(res => res.text());
       }
       const svgText = await pwRawSvgTextCache[svgPath];
       const recolored = svgText
@@ -749,6 +821,11 @@
       initMap();
       resizeCanvas();
       window.addEventListener('resize', resizeCanvas);
+      buildAltitudeLegend();
+
+      applyNightMode();
+      setInterval(applyNightMode, 60000);
+      setInterval(cycleBurnInShift, BURN_IN_SHIFT_INTERVAL_MS);
 
       requestAnimationFrame(drawRadarScope);
       fetchLiveFlights();
@@ -758,6 +835,40 @@
       // there's no keyboard for the shortcut below.
       const testParam = new URLSearchParams(window.location.search).get('testsquawk');
       if (testParam) triggerTestSquawk(testParam);
+    }
+
+    // ---------------------------------------------------------------------
+    // Screen-burn mitigation: every 24/7 static-content kiosk display (OLED especially, but
+    // plasma/LCD too over long enough time) risks burn-in from the scope rings, sidebar labels
+    // and scrollboard text always sitting in the same pixels. Nudging the whole visible UI
+    // (everything inside #burn-in-shield - i.e. not the full-screen overlays, which are
+    // siblings of it) by a couple of px every so often is the standard mitigation, and at that
+    // magnitude it's imperceptible during normal viewing.
+    // ---------------------------------------------------------------------
+    const BURN_IN_SHIFT_INTERVAL_MS = 90000;
+    const BURN_IN_OFFSETS = [[0, 0], [2, 0], [2, 2], [0, 2], [-2, 2], [-2, 0], [-2, -2], [0, -2], [2, -2]];
+    let burnInOffsetIdx = 0;
+
+    function cycleBurnInShift() {
+      const shieldEl = document.getElementById('burn-in-shield');
+      if (!shieldEl) return;
+      burnInOffsetIdx = (burnInOffsetIdx + 1) % BURN_IN_OFFSETS.length;
+      const [dx, dy] = BURN_IN_OFFSETS[burnInOffsetIdx];
+      shieldEl.style.transform = `translate(${dx}px, ${dy}px)`;
+    }
+
+    // ---------------------------------------------------------------------
+    // Night mode: dims the whole page (brightness/saturation, see body.night-mode CSS) during
+    // configured local hours, easier on the eyes - and on a kiosk display's longevity - than
+    // running full brightness overnight. Purely based on the viewing device's own clock.
+    // ---------------------------------------------------------------------
+    const NIGHT_MODE_START_HOUR = 21; // 9pm
+    const NIGHT_MODE_END_HOUR = 6;    // 6am
+
+    function applyNightMode() {
+      const hour = new Date().getHours();
+      const isNight = hour >= NIGHT_MODE_START_HOUR || hour < NIGHT_MODE_END_HOUR;
+      document.body.classList.toggle('night-mode', isNight);
     }
 
     // Keyboard shortcut for testing the alert-lock path at a desktop: 5/6/7 -> 7500/7600/7700, 9 -> 7777 (QRA).
@@ -919,33 +1030,54 @@
       return arr[(val % 8)];
     }
 
+    // name + coordinates (used for the ETA calc - see getDestinationCoords) for the fixed set
+    // of airports the heuristic route guess in resolveFlightRoute() can return, plus a few
+    // other common ones seen in hexdb responses.
     const airportDatabase = {
-      'EGLL': 'London Heathrow, UK',
-      'EGKK': 'London Gatwick, UK',
-      'EGGW': 'London Luton, UK',
-      'EGSS': 'London Stansted, UK',
-      'EGCC': 'Manchester Airport, UK',
-      'EGBB': 'Birmingham Airport, UK',
-      'EGNX': 'East Midlands Airport, UK',
-      'EGPH': 'Edinburgh Airport, UK',
-      'EGPF': 'Glasgow Airport, UK',
-      'EGNT': 'Newcastle Airport, UK',
-      'EGVN': 'RAF Brize Norton, UK',
-      'EGUN': 'RAF Mildenhall, UK',
-      'EGVA': 'RAF Fairford, UK',
-      'EGXC': 'RAF Coningsby, UK',
-      'EGUL': 'RAF Lakenheath, UK',
-      'ETAR': 'Ramstein Air Base, Germany',
-      'EHAM': 'Amsterdam Schiphol, Netherlands',
-      'LFPG': 'Paris Charles de Gaulle, France',
-      'EDDF': 'Frankfurt Airport, Germany',
-      'EIDW': 'Dublin Airport, Ireland',
-      'LEMD': 'Madrid Barajas, Spain',
-      'LIRF': 'Rome Fiumicino, Italy',
-      'KJFK': 'New York JFK, USA',
-      'KLAX': 'Los Angeles International, USA',
-      'OMDB': 'Dubai International, UAE'
+      'EGLL': { name: 'London Heathrow, UK', lat: 51.4700, lon: -0.4543 },
+      'EGKK': { name: 'London Gatwick, UK', lat: 51.1481, lon: -0.1903 },
+      'EGGW': { name: 'London Luton, UK', lat: 51.8747, lon: -0.3683 },
+      'EGSS': { name: 'London Stansted, UK', lat: 51.8860, lon: 0.2389 },
+      'EGCC': { name: 'Manchester Airport, UK', lat: 53.3537, lon: -2.2750 },
+      'EGBB': { name: 'Birmingham Airport, UK', lat: 52.4539, lon: -1.7480 },
+      'EGNX': { name: 'East Midlands Airport, UK', lat: 52.8311, lon: -1.3281 },
+      'EGPH': { name: 'Edinburgh Airport, UK', lat: 55.9500, lon: -3.3725 },
+      'EGPF': { name: 'Glasgow Airport, UK', lat: 55.8642, lon: -4.4328 },
+      'EGNT': { name: 'Newcastle Airport, UK', lat: 55.0375, lon: -1.6917 },
+      'EGVN': { name: 'RAF Brize Norton, UK', lat: 51.7500, lon: -1.5836 },
+      'EGUN': { name: 'RAF Mildenhall, UK', lat: 52.3617, lon: 0.4864 },
+      'EGVA': { name: 'RAF Fairford, UK', lat: 51.6822, lon: -1.7900 },
+      'EGXC': { name: 'RAF Coningsby, UK', lat: 53.0929, lon: -0.1650 },
+      'EGUL': { name: 'RAF Lakenheath, UK', lat: 52.4093, lon: 0.5610 },
+      'ETAR': { name: 'Ramstein Air Base, Germany', lat: 49.4369, lon: 7.6003 },
+      'EHAM': { name: 'Amsterdam Schiphol, Netherlands', lat: 52.3086, lon: 4.7639 },
+      'LFPG': { name: 'Paris Charles de Gaulle, France', lat: 49.0097, lon: 2.5479 },
+      'EDDF': { name: 'Frankfurt Airport, Germany', lat: 50.0379, lon: 8.5622 },
+      'EIDW': { name: 'Dublin Airport, Ireland', lat: 53.4213, lon: -6.2701 },
+      'LEMD': { name: 'Madrid Barajas, Spain', lat: 40.4983, lon: -3.5676 },
+      'LIRF': { name: 'Rome Fiumicino, Italy', lat: 41.8003, lon: 12.2389 },
+      'KJFK': { name: 'New York JFK, USA', lat: 40.6413, lon: -73.7781 },
+      'KLAX': { name: 'Los Angeles International, USA', lat: 33.9416, lon: -118.4085 },
+      'OMDB': { name: 'Dubai International, UAE', lat: 25.2532, lon: 55.3657 }
     };
+
+    function airportName(code) {
+      const entry = airportDatabase[(code || '').toUpperCase()];
+      return entry ? entry.name : '';
+    }
+
+    // Best-effort destination coordinates for the ETA calc: prefer real lat/lon that came back
+    // from adsbdb with the route itself (see queryAdsbdb), then fall back to our small local
+    // airport table for hexdb/heuristic routes. Returns null if neither has it (ETA is then
+    // just hidden rather than showing a wrong number).
+    function getDestinationCoords(route) {
+      if (route.toLat !== undefined && route.toLon !== undefined) {
+        return { lat: route.toLat, lon: route.toLon };
+      }
+      const entry = airportDatabase[(route.toCode || '').toUpperCase()];
+      return entry ? { lat: entry.lat, lon: entry.lon } : null;
+    }
+
 
     // ---------------------------------------------------------------------
     // Route resolution: adsbdb.com -> hexdb.io -> local heuristic guess.
@@ -973,6 +1105,10 @@
             toCode: to.iata_code || to.icao_code,
             fromName: from.name + (from.municipality ? `, ${from.municipality}` : ''),
             toName: to.name + (to.municipality ? `, ${to.municipality}` : ''),
+            // adsbdb's response includes real coordinates for both ends of the route - grab
+            // the destination ones now so ETA doesn't need a second lookup later.
+            toLat: typeof to.latitude === 'number' ? to.latitude : undefined,
+            toLon: typeof to.longitude === 'number' ? to.longitude : undefined,
             source: 'adsbdb'
           };
         }
@@ -998,8 +1134,8 @@
           return {
             fromCode: data.orig_iata || data.orig_icao,
             toCode: data.dest_iata || data.dest_icao,
-            fromName: data.orig_icao ? (airportDatabase[data.orig_icao] || '') : '',
-            toName: data.dest_icao ? (airportDatabase[data.dest_icao] || '') : '',
+            fromName: data.orig_icao ? airportName(data.orig_icao) : '',
+            toName: data.dest_icao ? airportName(data.dest_icao) : '',
             source: 'hexdb'
           };
         }
@@ -1162,6 +1298,39 @@
                 Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos(dLon);
       let brng = Math.atan2(y, x) * 180 / Math.PI;
       return Math.round((brng + 360) % 360);
+    }
+
+    // Altitude-banded colour for the scope silhouette/label of routine traffic (military,
+    // QRA, and emergency squawks still win out over this - see silColor in drawRadarScope).
+    // Bands roughly follow common ATC/flight-level intuition: ground/low circuit traffic,
+    // low-level GA, mid-level regional/climb-descent, upper airways, and cruise-altitude
+    // long-haul. Order matters - checked low to high. Kept in sync with the on-screen legend
+    // built in buildAltitudeLegend().
+    const ALTITUDE_BANDS = [
+      { maxFt: 3000, color: '#ff4d94', label: '< 3,000 ft' },
+      { maxFt: 10000, color: '#ff9900', label: '3,000–10,000 ft' },
+      { maxFt: 24000, color: '#ffe600', label: '10,000–24,000 ft' },
+      { maxFt: 34000, color: '#00ff66', label: '24,000–34,000 ft' },
+      { maxFt: Infinity, color: '#00bfff', label: '34,000+ ft' }
+    ];
+
+    function altitudeColor(altBaro) {
+      if (altBaro === undefined || altBaro === null || altBaro === 'ground') return '#7a8a94'; // unknown/on-ground - neutral grey
+      const alt = Number(altBaro);
+      if (Number.isNaN(alt)) return '#7a8a94';
+      for (const band of ALTITUDE_BANDS) {
+        if (alt < band.maxFt) return band.color;
+      }
+      return ALTITUDE_BANDS[ALTITUDE_BANDS.length - 1].color;
+    }
+
+    // One-time legend build for the altitude colour key (see #altitude-legend in the HTML).
+    function buildAltitudeLegend() {
+      const el = document.getElementById('altitude-legend');
+      if (!el) return;
+      el.innerHTML = ALTITUDE_BANDS.map(b =>
+        `<div class="legend-row"><span class="legend-dot" style="background:${b.color};"></span>${b.label}</div>`
+      ).join('');
     }
 
     const EMERGENCY_SQUAWKS = ['7500', '7600', '7700'];
@@ -1439,7 +1608,50 @@
         radius: radiusMeters
       }).addTo(map);
 
-      map.fitBounds(radarCircle.getBounds(), { padding: [10, 10] });
+      map.fitBounds(radarCircle.getBounds(), { padding: [0, 0] });
+
+      refreshWeatherOverlay();
+      setInterval(refreshWeatherOverlay, WEATHER_REFRESH_MS);
+    }
+
+    // ---------------------------------------------------------------------
+    // Weather systems overlay: RainViewer's free public Weather Maps API (no key required -
+    // https://www.rainviewer.com/api.html). Fetches the latest available radar frame (data
+    // refreshes there every ~10 minutes) and lays it into the Leaflet map as a translucent
+    // tile layer, underneath the canvas scope so blips/labels/sweep always stay legible on
+    // top of it. The map div itself already renders at opacity 0.7 (see #map CSS), so this
+    // layer's own low opacity keeps precipitation as a soft backdrop rather than a solid overlay.
+    // ---------------------------------------------------------------------
+    const WEATHER_REFRESH_MS = 10 * 60 * 1000;
+    let weatherLayer = null;
+
+    async function refreshWeatherOverlay() {
+      if (!map) return;
+      try {
+        const res = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+        if (!res.ok) return;
+        const data = await res.json();
+        const frames = data && data.radar && data.radar.past;
+        if (!frames || !frames.length) return;
+        const latest = frames[frames.length - 1];
+        const tileUrl = `${data.host}${latest.path}/256/{z}/{x}/{y}/2/1_1.png`;
+
+        const newLayer = L.tileLayer(tileUrl, {
+          opacity: 0.35,
+          maxNativeZoom: 7,
+          zIndex: 5,
+          pane: 'tilePane'
+        });
+        newLayer.addTo(map);
+        const oldLayer = weatherLayer;
+        weatherLayer = newLayer;
+        // Swap after the new tiles are in so there's no flash of no-weather between frames.
+        newLayer.once('load', () => {
+          if (oldLayer) map.removeLayer(oldLayer);
+        });
+      } catch (err) {
+        console.debug('[weather] failed to refresh radar overlay -', err);
+      }
     }
 
     function resizeCanvas() {
@@ -1451,7 +1663,7 @@
       
       if (map && radarCircle) {
         map.invalidateSize();
-        map.fitBounds(radarCircle.getBounds(), { padding: [10, 10] });
+        map.fitBounds(radarCircle.getBounds(), { padding: [0, 0] });
       }
     }
 
@@ -1510,6 +1722,7 @@
 
               liveAircraft.forEach(ac => {
                 if (!ac.hex || !ac.lat || !ac.lon) return;
+                if (!aircraftFirstSeenAt[ac.hex]) aircraftFirstSeenAt[ac.hex] = Date.now();
                 if (!aircraftTrails[ac.hex]) aircraftTrails[ac.hex] = [];
                 const t = aircraftTrails[ac.hex];
                 const last = t[t.length - 1];
@@ -1880,9 +2093,9 @@
         routeContainer.classList.toggle('route-estimated', isEstimated);
 
         document.getElementById('sb-from').innerHTML =
-          `<b>${route.fromCode}</b> — <span style="color:var(--text-dim);">${route.fromName || airportDatabase[route.fromCode] || 'Aerodrome'}</span>`;
+          `<b>${route.fromCode}</b> — <span style="color:var(--text-dim);">${route.fromName || airportName(route.fromCode) || 'Aerodrome'}</span>`;
         document.getElementById('sb-to').innerHTML =
-          `<b>${route.toCode}</b> — <span style="color:var(--text-dim);">${route.toName || airportDatabase[route.toCode] || 'Aerodrome'}</span>`;
+          `<b>${route.toCode}</b> — <span style="color:var(--text-dim);">${route.toName || airportName(route.toCode) || 'Aerodrome'}</span>`;
 
         tagEl.style.display = 'inline-block';
         if (isEstimated) {
@@ -2069,6 +2282,11 @@
     }
 
     let sweepAngle = 0;
+    // One full sweep rotation (2π at +0.015rad/frame, ~60fps) takes ~7s - fade every non-locked
+    // blip out over roughly that long, down to a dim floor rather than to nothing, so the scope
+    // still reads at a glance between sweep passes.
+    const SWEEP_FADE_MS = 7000;
+    const SWEEP_FADE_MIN_ALPHA = 0.35;
 
     function drawRadarScope() {
       if (!ctx || !canvas || !map) return;
@@ -2081,6 +2299,17 @@
       const edgeLat = userConfig.lat + (userConfig.radiusNM / 60);
       const edgePt = map.latLngToContainerPoint([edgeLat, userConfig.lon]);
       const maxRadiusPx = Math.abs(edgePt.y - centerPt.y);
+
+      // CRT-style scanlines - a faint horizontal grid drawn straight over everything else so
+      // it doesn't interact with the glow/blur below. Cheap and very subtle by design (4%
+      // opacity) - a wash of texture, not a visible stripe pattern.
+      ctx.save();
+      ctx.globalAlpha = 0.04;
+      ctx.fillStyle = '#000000';
+      for (let y = 0; y < canvas.height; y += 3) {
+        ctx.fillRect(0, y, canvas.width, 1);
+      }
+      ctx.restore();
 
       ctx.shadowColor = '#00ff66';
       ctx.shadowBlur = 8;
@@ -2114,6 +2343,7 @@
       ctx.fillText('W', centerPt.x - maxRadiusPx - 18, centerPt.y + 4);
 
       sweepAngle += 0.015;
+      if (sweepAngle > 2 * Math.PI) sweepAngle -= 2 * Math.PI; // keep it bounded, doesn't affect the maths below either way
       for (let i = 0; i < 15; i++) {
         const trailAngle = sweepAngle - (i * 0.012);
         const trailX = centerPt.x + Math.cos(trailAngle) * maxRadiusPx;
@@ -2161,6 +2391,23 @@
           const isQra = ac.squawk === QRA_SQUAWK;
           const isLocked = lockedAircraft && lockedAircraft.hex === ac.hex;
 
+          // CRT-style sweep fade: everything except the locked aircraft brightens when the
+          // sweep beam passes its bearing, then dims until the next pass comes back around
+          // (one full rotation later) rather than staying uniformly lit the whole time.
+          const blipAngle = Math.atan2(pt.y - centerPt.y, pt.x - centerPt.x);
+          const angDiff = Math.abs(((sweepAngle - blipAngle + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI);
+          if (ac.hex && angDiff < 0.02) aircraftLastSweepHit[ac.hex] = Date.now();
+          let fadeAlpha = 1;
+          if (!isLocked && ac.hex) {
+            if (aircraftLastSweepHit[ac.hex] === undefined) aircraftLastSweepHit[ac.hex] = Date.now();
+            const elapsed = Date.now() - aircraftLastSweepHit[ac.hex];
+            const t = Math.min(1, elapsed / SWEEP_FADE_MS);
+            fadeAlpha = 1 - t * (1 - SWEEP_FADE_MIN_ALPHA);
+          }
+
+          ctx.save();
+          ctx.globalAlpha = fadeAlpha;
+
           if (isLocked) {
             const pulseRadius = 12 + Math.sin(Date.now() / 150) * 3;
             ctx.beginPath();
@@ -2188,7 +2435,10 @@
           }
 
           const heading = ac.track !== undefined ? ac.track : 0;
-          const silColor = isEmg ? '#ff3333' : (isQra || isMil ? '#ffb000' : '#00ff66');
+          // Altitude-banded colour for routine traffic; emergency/military/QRA still win out
+          // over altitude so those states are never ambiguous with a colour band - see
+          // altitudeColor() and ALTITUDE_BANDS above.
+          const silColor = isEmg ? '#ff3333' : (isQra || isMil ? '#ffb000' : altitudeColor(ac.alt_baro));
 
           // Prefer the real plane-watch/pw-silhouettes artwork for this ICAO type designator
           // once it's finished loading; kick off loading it either way (harmless/no-op if
@@ -2245,6 +2495,8 @@
           const label = ac.flight ? ac.flight.trim() : ac.hex;
           const altText = ac.alt_baro ? ` FL${Math.round(ac.alt_baro / 100)}` : '';
           ctx.fillText(`${label}${altText}`, pt.x + 8, pt.y + 3);
+
+          ctx.restore(); // matches the fadeAlpha save() above
         });
       }
 
