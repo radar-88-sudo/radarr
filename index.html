@@ -1815,6 +1815,42 @@
       });
     }
 
+    // ---------------------------------------------------------------------
+    // Glider/sailplane filter: identifies non-powered aircraft so they can be dropped from
+    // liveAircraft entirely (see fetchLiveFlights) - they never appear on the scope, the
+    // sidebar, or the scrollboard. Checked two ways, since neither field is reliably present
+    // on every feed:
+    //   1. ADS-B emitter category - "B1" is the dedicated glider/sailplane code in the
+    //      standard category table (A0-A7 powered fixed-wing/rotorcraft, B0-B7 "other":
+    //      B1 glider/sailplane, B2 lighter-than-air, B3 skydiver, B4 ultralight/hang-glider/
+    //      paraglider, etc). This is the authoritative signal when present.
+    //   2. Type designator fallback - common ICAO glider type codes, for feeds/aircraft that
+    //      report a type but not a useful category (e.g. category comes back "A0"/unset).
+    // ---------------------------------------------------------------------
+    const GLIDER_TYPE_DESIGNATORS = new Set([
+      'GLID', // generic/unknown glider
+      'ASK21', 'ASK23', 'ASK13', 'ASW15', 'ASW19', 'ASW20', 'ASW27', 'ASW28',
+      'DISC', 'DIMO', // Schempp-Hirth Discus / Duo Discus
+      'LS1', 'LS3', 'LS4', 'LS6', 'LS8',
+      'PIK20', 'PK20',
+      'GROB', 'G103', 'G104', 'G109',
+      'DG100', 'DG300', 'DG800', 'DG1000',
+      'VENT', 'VENT2', // Ventus
+      'NIMB', // Nimbus
+      'JANU', // Janus
+      'PW5', 'PW6',
+      'SZD5', 'SZD9', 'SZD30', 'SZD48', 'SZD55',
+      'H101', 'H201', 'H301', 'H304', // Glasflugel Hornet/Standard Libelle etc
+      'ARCU' // Arcus
+    ]);
+
+    function isGlider(ac) {
+      const category = (ac.category || '').trim().toUpperCase();
+      if (category === 'B1') return true;
+      const type = (ac.t || '').trim().toUpperCase();
+      return GLIDER_TYPE_DESIGNATORS.has(type);
+    }
+
     async function fetchLiveFlights() {
       if (isFetching) return;
 
@@ -1846,8 +1882,14 @@
               // Some feeds inject a synthetic "ground station" placeholder - hex all zeros,
               // type "TWR" - representing the receiver's own site rather than an aircraft.
               // Drop these before anything else, or they can end up "nearest" (distance ~0)
-              // and lock the scrollboard onto a fake target.
-              liveAircraft = aircrafts.filter(ac => !/^0+$/.test(ac.hex || '') && (ac.t || '').toUpperCase() !== 'TWR');
+              // and lock the scrollboard onto a fake target. Gliders/sailplanes are dropped
+              // here too - see isGlider() above - so they never reach the scope, sidebar, or
+              // scrollboard.
+              liveAircraft = aircrafts.filter(ac =>
+                !/^0+$/.test(ac.hex || '') &&
+                (ac.t || '').toUpperCase() !== 'TWR' &&
+                !isGlider(ac)
+              );
 
               // Keep the injected test-squawk aircraft (see triggerTestSquawk) alive across
               // polls until it expires, so a real fetch cycle doesn't wipe it out mid-test.
